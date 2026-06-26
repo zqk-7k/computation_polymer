@@ -8,6 +8,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class IntakeProperties {
 
   private String dbPath = "documents/data/vasp_intake";
+  private String downloadDir = "documents/data/intake_downloads";
+  private int localDownloadMaxMb = 2048;
 
   private final Discovery discovery = new Discovery();
 
@@ -17,6 +19,22 @@ public class IntakeProperties {
 
   public void setDbPath(String dbPath) {
     this.dbPath = dbPath;
+  }
+
+  public String getDownloadDir() {
+    return downloadDir;
+  }
+
+  public void setDownloadDir(String downloadDir) {
+    this.downloadDir = downloadDir;
+  }
+
+  public int getLocalDownloadMaxMb() {
+    return localDownloadMaxMb;
+  }
+
+  public void setLocalDownloadMaxMb(int localDownloadMaxMb) {
+    this.localDownloadMaxMb = localDownloadMaxMb;
   }
 
   public Discovery getDiscovery() {

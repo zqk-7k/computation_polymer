@@ -18,6 +18,7 @@ import {
   reviewDiscoveryCandidate,
   reviewDatasetSubmission,
   runDatasetDiscovery,
+  saveDatasetSubmissionSource,
   submitDatasetSource,
   updateDiscoveryConfig,
   validateDiscoveryCandidate,
@@ -43,6 +44,7 @@ const reviewNotes = reactive({})
 const discoveryNotes = reactive({})
 const ingestState = reactive({})
 const activeAdaptId = ref(null)
+const activeSaveId = ref(null)
 const adaptProgress = reactive({})
 const form = reactive({
   datasetName: '',
@@ -307,6 +309,26 @@ async function adaptSubmission(submission) {
   } finally {
     window.clearInterval(timer)
     activeAdaptId.value = null
+    working.value = false
+  }
+}
+
+async function saveSubmissionSource(submission) {
+  if (!window.confirm('确认将该来源链接保存到本地？大文件会占用 documents/data/intake_downloads 空间。')) {
+    return
+  }
+  error.value = ''
+  notice.value = ''
+  working.value = true
+  activeSaveId.value = submission.id
+  try {
+    await saveDatasetSubmissionSource(submission.id)
+    submissions.value = await fetchDatasetSubmissions()
+    notice.value = '源文件已保存到本地，可在该任务的预检结果中查看路径、大小和 SHA-256。'
+  } catch (err) {
+    error.value = err.message || '保存源文件失败'
+  } finally {
+    activeSaveId.value = null
     working.value = false
   }
 }
@@ -1038,6 +1060,13 @@ function formatDate(value) {
               :disabled="working"
               @click="adaptSubmission(submission)"
             >{{ adaptButtonText(submission) }}</button>
+            <button
+              v-if="isSuperAdmin && submission.status === 'APPROVED' && submission.dataUrl"
+              class="save-source"
+              type="button"
+              :disabled="working"
+              @click="saveSubmissionSource(submission)"
+            >{{ activeSaveId === submission.id ? '保存中...' : '保存源文件到本地' }}</button>
             <div v-if="adaptProgress[submission.id]" class="adapt-progress" :class="adaptProgress[submission.id].status">
               <div class="adapt-progress-head">
                 <strong>{{ adaptProgress[submission.id].label }}</strong>
@@ -1093,6 +1122,22 @@ function formatDate(value) {
               </div>
               <p v-if="parsedProfile(submission).summary" class="pp-summary">
                 {{ parsedProfile(submission).summary }}
+              </p>
+              <div class="profile-scale">
+                <strong>数据规模</strong>
+                <span>远程大小：{{ formatBytes(parsedProfile(submission).sizeBytes) }}</span>
+                <span>样本大小：{{ formatBytes(parsedProfile(submission).sampleBytes) }}</span>
+                <span>记录估计：{{ parsedProfile(submission).recordEstimate || '未识别' }}</span>
+                <span>本地保存：{{ parsedProfile(submission).localSaved ? formatBytes(parsedProfile(submission).localSizeBytes) : '未保存' }}</span>
+              </div>
+              <div v-if="parsedProfile(submission).localSaved" class="local-save">
+                <span>本地路径</span>
+                <strong>{{ parsedProfile(submission).localPath }}</strong>
+                <span>SHA-256</span>
+                <strong>{{ parsedProfile(submission).localSha256 }}</strong>
+              </div>
+              <p v-if="parsedProfile(submission).localSaveError" class="pp-warn">
+                本地保存失败：{{ parsedProfile(submission).localSaveError }}
               </p>
               <p v-if="parsedProfile(submission).archiveEntries && parsedProfile(submission).archiveEntries.length" class="pp-fields">
                 归档文件：{{ parsedProfile(submission).archiveEntries.join('、') }}
@@ -2511,6 +2556,61 @@ textarea {
   color: var(--vs-cyan-700);
 }
 
+.save-source {
+  margin-top: 12px;
+  margin-left: 8px;
+  border-color: color-mix(in srgb, #16a36b 45%, var(--vs-border));
+  background: color-mix(in srgb, #16a36b 10%, var(--vs-card));
+  color: #168151;
+}
+
+.profile-scale {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.profile-scale strong {
+  grid-column: 1 / -1;
+  color: var(--vs-text);
+  font-size: 11px;
+}
+
+.profile-scale span {
+  padding: 7px 8px;
+  border: 1px solid var(--vs-border);
+  border-radius: var(--vs-radius-sm);
+  background: color-mix(in srgb, var(--vs-card) 86%, var(--vs-blue-100));
+  color: var(--vs-text-secondary);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.local-save {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  gap: 6px 10px;
+  margin-top: 9px;
+  padding: 9px;
+  border: 1px dashed color-mix(in srgb, #16a36b 34%, var(--vs-border));
+  border-radius: var(--vs-radius-sm);
+  background: color-mix(in srgb, #16a36b 7%, var(--vs-card));
+}
+
+.local-save span {
+  color: var(--vs-text-tertiary);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.local-save strong {
+  overflow-wrap: anywhere;
+  color: var(--vs-text);
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .ingest-panel {
   margin-top: 10px;
   padding: 12px;
@@ -2560,6 +2660,7 @@ textarea {
   .queue-stats,
   .admin-guide,
   .task-source-meta,
+  .profile-scale,
   .pipeline-flow {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2583,6 +2684,7 @@ textarea {
   .queue-stats,
   .admin-guide,
   .task-source-meta,
+  .profile-scale,
   .task-progress,
   .pipeline-flow,
   .proposal-form {

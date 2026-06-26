@@ -149,6 +149,14 @@ public class DatasetIntakeController {
     return intakeService.profileSubmission(authorization, id);
   }
 
+  @PostMapping("/submissions/{id}/save-source")
+  public DatasetSubmissionResponse saveSource(
+      @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
+      @PathVariable long id
+  ) {
+    return intakeService.saveSourceLocally(authorization, id);
+  }
+
   @GetMapping("/submissions/{id}/ingest-suggestion")
   public IngestSuggestionResponse ingestSuggestion(
       @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,

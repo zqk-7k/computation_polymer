@@ -28,6 +28,8 @@ vasp:
     request-timeout-seconds: ${OLLAMA_REQUEST_TIMEOUT_SECONDS:180}
   intake:
     db-path: documents/data/vasp_intake
+    download-dir: ${VASP_INTAKE_DOWNLOAD_DIR:documents/data/intake_downloads}
+    local-download-max-mb: ${VASP_INTAKE_LOCAL_DOWNLOAD_MAX_MB:2048}
     discovery:
       enabled: ${VASP_DISCOVERY_ENABLED:true}
       cron: ${VASP_DISCOVERY_CRON:0 15 3 ? * MON}

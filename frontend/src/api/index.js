@@ -293,6 +293,12 @@ export function adaptDatasetSubmission(id) {
   })
 }
 
+export function saveDatasetSubmissionSource(id) {
+  return request(`/intake/submissions/${encodeURIComponent(id)}/save-source`, {
+    method: 'POST'
+  })
+}
+
 export function fetchIngestSuggestion(id) {
   return request(`/intake/submissions/${encodeURIComponent(id)}/ingest-suggestion`)
 }

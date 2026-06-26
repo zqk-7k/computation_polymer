@@ -10,6 +10,7 @@ import com.vaspshow.backend.dto.PublicDatasetSourceResponse;
 import com.vaspshow.backend.dto.SubmissionReviewRequest;
 import com.vaspshow.backend.exception.ApiException;
 import com.vaspshow.backend.support.OutboundUrlGuard;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jhdf.HdfFile;
@@ -23,10 +24,12 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -309,6 +312,38 @@ public class DatasetIntakeService {
     return runProfile(id, true);
   }
 
+  public DatasetSubmissionResponse saveSourceLocally(String authorization, long id) {
+    authService.requireDatasetReviewAccess(authorization);
+    DatasetSubmissionResponse submission = findById(id);
+    if (!"APPROVED".equals(submission.status())) {
+      throw new ApiException(HttpStatus.BAD_REQUEST, "仅已批准来源可保存到本地");
+    }
+    Map<String, Object> profile = parseProfileMap(submission.parseProfile());
+    profile.put("localSaveStartedAt", Instant.now().toString());
+    try {
+      LocalDownloadResult saved = downloadSourceToLocal(id, submission.dataUrl());
+      profile.put("localSaved", true);
+      profile.put("localPath", saved.path());
+      profile.put("localFileName", saved.fileName());
+      profile.put("localSizeBytes", saved.sizeBytes());
+      profile.put("localSha256", saved.sha256());
+      profile.put("localSavedAt", Instant.now().toString());
+      profile.put("localContentType", saved.contentType());
+      String stage = submission.pipelineStage() == null || submission.pipelineStage().isBlank()
+          ? "SOURCE_APPROVED"
+          : submission.pipelineStage();
+      String message = "已保存源文件到本地：" + saved.path()
+          + "；大小 " + saved.sizeBytes() + " bytes；SHA-256 " + saved.sha256() + "。";
+      return applyProfile(id, stage, message, toJson(profile));
+    } catch (ApiException ex) {
+      throw ex;
+    } catch (Exception ex) {
+      profile.put("localSaved", false);
+      profile.put("localSaveError", ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage());
+      return applyProfile(id, submission.pipelineStage(), "源文件本地保存失败：" + profile.get("localSaveError"), toJson(profile));
+    }
+  }
+
   public DatasetSubmissionResponse profileSubmissionAsSystem(long id) {
     return runProfile(id, false);
   }
@@ -437,6 +472,116 @@ public class DatasetIntakeService {
     return new DownloadSample(bytes, total, truncated, fileNameFromUrl(url), contentType);
   }
 
+  private LocalDownloadResult downloadSourceToLocal(long id, String dataUrl) throws Exception {
+    String url = dataUrl == null ? "" : dataUrl.trim();
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      throw new ApiException(HttpStatus.BAD_REQUEST, "数据链接不是可下载的 http/https 地址");
+    }
+    if (!OutboundUrlGuard.isSafe(url)) {
+      throw new ApiException(HttpStatus.BAD_REQUEST, "下载链接未通过安全校验（禁止内网/环回/链路本地等地址）");
+    }
+    int maxMb = Math.max(1, properties.getLocalDownloadMaxMb());
+    long maxBytes = maxMb * 1024L * 1024L;
+    String contentType = "";
+    long declaredTotal = -1L;
+    try {
+      HttpRequest head = HttpRequest.newBuilder(URI.create(url))
+          .method("HEAD", HttpRequest.BodyPublishers.noBody())
+          .timeout(Duration.ofSeconds(15))
+          .header("User-Agent", "VASP-Show-source-downloader")
+          .build();
+      HttpResponse<Void> headResponse = httpClient.send(head, HttpResponse.BodyHandlers.discarding());
+      contentType = headResponse.headers().firstValue("content-type").orElse("");
+      declaredTotal = headResponse.headers().firstValueAsLong("content-length").orElse(-1L);
+      if (declaredTotal > maxBytes) {
+        throw new ApiException(HttpStatus.BAD_REQUEST,
+            "远程文件约 " + declaredTotal + " bytes，超过本地保存上限 "
+                + maxBytes + " bytes；可调高 VASP_INTAKE_LOCAL_DOWNLOAD_MAX_MB 后再保存。");
+      }
+    } catch (ApiException ex) {
+      throw ex;
+    } catch (Exception ignored) {
+      // Some repositories do not support HEAD; stream download below still enforces maxBytes.
+    }
+    HttpRequest get = HttpRequest.newBuilder(URI.create(url))
+        .GET()
+        .timeout(Duration.ofMinutes(30))
+        .header("User-Agent", "VASP-Show-source-downloader")
+        .build();
+    HttpResponse<InputStream> response = httpClient.send(get, HttpResponse.BodyHandlers.ofInputStream());
+    if (response.statusCode() < 200 || response.statusCode() >= 300) {
+      throw new ApiException(HttpStatus.BAD_REQUEST, "下载失败，HTTP " + response.statusCode());
+    }
+    if (contentType.isBlank()) {
+      contentType = response.headers().firstValue("content-type").orElse("");
+    }
+    Path dir = Paths.get(properties.getDownloadDir()).resolve("submission_" + id).toAbsolutePath().normalize();
+    Files.createDirectories(dir);
+    String fileName = safeLocalFileName(fileNameFromUrl(url), contentType);
+    Path target = dir.resolve(fileName).normalize();
+    if (!target.startsWith(dir)) {
+      throw new ApiException(HttpStatus.BAD_REQUEST, "下载文件名不安全");
+    }
+    Path temp = dir.resolve(fileName + ".part");
+    MessageDigest digest = MessageDigest.getInstance("SHA-256");
+    long total = 0;
+    try (InputStream in = response.body();
+         java.io.OutputStream out = Files.newOutputStream(temp)) {
+      byte[] chunk = new byte[128 * 1024];
+      int read;
+      while ((read = in.read(chunk)) != -1) {
+        if (total + read > maxBytes) {
+          throw new ApiException(HttpStatus.BAD_REQUEST,
+              "下载超过本地保存上限 " + maxBytes + " bytes，已停止保存。");
+        }
+        out.write(chunk, 0, read);
+        digest.update(chunk, 0, read);
+        total += read;
+      }
+    } catch (Exception ex) {
+      Files.deleteIfExists(temp);
+      throw ex;
+    }
+    Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+    return new LocalDownloadResult(target.toString(), fileName, total, hex(digest.digest()), contentType);
+  }
+
+  private Map<String, Object> parseProfileMap(String parseProfile) {
+    if (parseProfile == null || parseProfile.isBlank()) {
+      return new LinkedHashMap<>();
+    }
+    try {
+      return objectMapper.readValue(parseProfile, new TypeReference<LinkedHashMap<String, Object>>() {});
+    } catch (Exception ignored) {
+      return new LinkedHashMap<>();
+    }
+  }
+
+  private static String safeLocalFileName(String fileName, String contentType) {
+    String name = fileName == null || fileName.isBlank() ? "source" : fileName;
+    int query = name.indexOf('?');
+    if (query >= 0) {
+      name = name.substring(0, query);
+    }
+    name = name.replaceAll("[\\\\/:*?\"<>|]+", "_").replaceAll("^\\.+", "");
+    if (name.isBlank()) {
+      name = "source";
+    }
+    String lower = name.toLowerCase(Locale.ROOT);
+    if (!lower.contains(".") && contentType != null && contentType.toLowerCase(Locale.ROOT).contains("html")) {
+      name += ".html";
+    }
+    return name.length() > 180 ? name.substring(0, 180) : name;
+  }
+
+  private static String hex(byte[] bytes) {
+    StringBuilder builder = new StringBuilder(bytes.length * 2);
+    for (byte b : bytes) {
+      builder.append(String.format("%02x", b & 0xFF));
+    }
+    return builder.toString();
+  }
+
   private static String detectSampleFormat(DownloadSample sample) {
     byte[] b = sample.bytes();
     if (b.length >= 4 && (b[0] & 0xFF) == 0x89 && b[1] == 'H' && b[2] == 'D' && b[3] == 'F') {
@@ -465,6 +610,7 @@ public class DatasetIntakeService {
     }
     String name = sample.fileName().toLowerCase(Locale.ROOT);
     String ct = sample.contentType().toLowerCase(Locale.ROOT);
+    if (ct.contains("text/html")) return "HTML";
     if (name.endsWith(".h5") || name.endsWith(".hdf5")) return "HDF5";
     if (name.endsWith(".zip")) return "ZIP";
     if (name.endsWith(".tar.gz") || name.endsWith(".tgz") || name.endsWith(".gz")) return "GZIP";
@@ -482,6 +628,10 @@ public class DatasetIntakeService {
     if (!looksLikeText(b)) return "BINARY";
     if (name.endsWith(".csv") || ct.contains("text/csv")) return "CSV";
     String headText = new String(b, 0, Math.min(b.length, 512), StandardCharsets.UTF_8).trim();
+    String lowerHead = headText.toLowerCase(Locale.ROOT);
+    if (lowerHead.startsWith("<!doctype html") || lowerHead.startsWith("<html") || lowerHead.contains("<html")) {
+      return "HTML";
+    }
     String[] headLines = headText.split("\\r?\\n");
     if (headLines.length > 0) {
       String first = headLines[0].trim();
@@ -539,6 +689,7 @@ public class DatasetIntakeService {
         case "CIF" -> parseCif(profile, sample);
         case "POSCAR" -> parsePoscar(profile, sample);
         case "HDF5" -> parseHdf5(profile, sample);
+        case "HTML" -> parseHtmlLanding(profile, sample);
         case "ZIP" -> parseZip(profile, sample);
         case "TAR" -> parseTar(profile, sample, "TAR");
         case "GZIP", "XZ", "BZIP2", "ZSTD", "BINARY" -> parseCompressedOrBinary(profile, format, sample);
@@ -672,6 +823,13 @@ public class DatasetIntakeService {
           + (ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage())
           + "。若远程文件很大，当前 Range 样本可能不足以完整解压。");
     }
+  }
+
+  private void parseHtmlLanding(Map<String, Object> profile, DownloadSample sample) {
+    profile.put("status", "unsupported");
+    profile.put("fields", List.of());
+    profile.put("detectedFields", "metadata only");
+    profile.put("summary", "当前链接返回 HTML 网页入口，不是直接数据文件；请在数据仓库页面复制具体文件下载链接，或先点击“保存源文件到本地”确认保存的是网页还是数据文件。");
   }
 
   private void parseXyz(Map<String, Object> profile, DownloadSample sample) {
@@ -1019,6 +1177,9 @@ public class DatasetIntakeService {
   }
 
   private record InnerBytes(byte[] bytes, boolean truncated) {
+  }
+
+  private record LocalDownloadResult(String path, String fileName, long sizeBytes, String sha256, String contentType) {
   }
 
   @FunctionalInterface
