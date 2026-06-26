@@ -42,6 +42,8 @@ const notice = ref('')
 const reviewNotes = reactive({})
 const discoveryNotes = reactive({})
 const ingestState = reactive({})
+const activeAdaptId = ref(null)
+const adaptProgress = reactive({})
 const form = reactive({
   datasetName: '',
   dataType: '',
@@ -59,6 +61,14 @@ const pipelineSteps = [
   { key: 'ADAPTER_REQUIRED', label: '格式适配', note: '解析器、字段映射与单位校验' },
   { key: 'VALIDATED', label: '入库校验', note: '记录数、抽样结构与元数据检查' },
   { key: 'PUBLISHED', label: '发布更新', note: '写入展示库并刷新目录' }
+]
+
+const adaptSteps = [
+  { key: 'guard', label: '安全校验', pct: 15, detail: '校验下载链接是否为安全的公开 HTTP/HTTPS 地址。' },
+  { key: 'download', label: '读取样本', pct: 38, detail: '从远程链接读取样本；大文件只抽取前若干 MB。' },
+  { key: 'detect', label: '识别格式', pct: 62, detail: '识别 CSV、JSON、HDF5、XYZ、CIF、POSCAR 或压缩归档格式。' },
+  { key: 'parse', label: '解析预检', pct: 84, detail: '提取字段、结构、记录估计和科学属性线索。' },
+  { key: 'save', label: '写入结果', pct: 100, detail: '保存预检报告并刷新接入任务。' }
 ]
 
 const submissionHeading = computed(() => isSuperAdmin.value ? '待审核与管线任务' : '我的投稿进度')
@@ -255,13 +265,48 @@ async function adaptSubmission(submission) {
   error.value = ''
   notice.value = ''
   working.value = true
+  activeAdaptId.value = submission.id
+  let stepIndex = 0
+  adaptProgress[submission.id] = {
+    status: 'running',
+    percent: adaptSteps[0].pct,
+    label: adaptSteps[0].label,
+    detail: adaptSteps[0].detail
+  }
+  const timer = window.setInterval(() => {
+    if (stepIndex < adaptSteps.length - 2) {
+      stepIndex += 1
+      const step = adaptSteps[stepIndex]
+      adaptProgress[submission.id] = {
+        status: 'running',
+        percent: step.pct,
+        label: step.label,
+        detail: step.detail
+      }
+    }
+  }, 900)
   try {
     await adaptDatasetSubmission(submission.id)
+    const finalStep = adaptSteps[adaptSteps.length - 1]
+    adaptProgress[submission.id] = {
+      status: 'done',
+      percent: finalStep.pct,
+      label: '预检完成',
+      detail: '已保存自动解析预检结果，见下方报告。'
+    }
     submissions.value = await fetchDatasetSubmissions()
-    notice.value = '已自动下载样本并完成解析预检，可在该任务下查看提取到的字段与结构。'
+    notice.value = '已读取远程样本并完成解析预检，可在该任务下查看格式、摘要和样本信息。'
   } catch (err) {
+    adaptProgress[submission.id] = {
+      status: 'failed',
+      percent: 100,
+      label: '预检失败',
+      detail: err.message || '自动解析预检失败'
+    }
     error.value = err.message || '自动解析预检失败'
   } finally {
+    window.clearInterval(timer)
+    activeAdaptId.value = null
     working.value = false
   }
 }
@@ -273,6 +318,34 @@ function parsedProfile(submission) {
   } catch {
     return null
   }
+}
+
+function adaptButtonText(submission) {
+  if (activeAdaptId.value === submission.id) {
+    return adaptProgress[submission.id]?.label || '预检中...'
+  }
+  return '读取样本并解析预检'
+}
+
+function adaptStepState(progress, step) {
+  if (!progress) return ''
+  if (progress.status === 'failed') return 'blocked'
+  if (progress.percent >= step.pct) return 'done'
+  const current = adaptSteps.find(item => item.pct >= progress.percent)
+  return current?.key === step.key ? 'active' : ''
+}
+
+function formatBytes(value) {
+  const n = Number(value || 0)
+  if (!Number.isFinite(n) || n <= 0) return '-'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let size = n
+  let index = 0
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024
+    index += 1
+  }
+  return `${size >= 10 || index === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[index]}`
 }
 
 async function loadIngest(submission) {
@@ -916,12 +989,41 @@ function formatDate(value) {
               type="button"
               :disabled="working"
               @click="adaptSubmission(submission)"
-            >{{ working ? '预检中...' : '自动下载并解析预检' }}</button>
+            >{{ adaptButtonText(submission) }}</button>
+            <div v-if="adaptProgress[submission.id]" class="adapt-progress" :class="adaptProgress[submission.id].status">
+              <div class="adapt-progress-head">
+                <strong>{{ adaptProgress[submission.id].label }}</strong>
+                <span>{{ adaptProgress[submission.id].percent }}%</span>
+              </div>
+              <div class="adapt-progress-track">
+                <i :style="{ width: adaptProgress[submission.id].percent + '%' }"></i>
+              </div>
+              <p>{{ adaptProgress[submission.id].detail }}</p>
+              <div class="adapt-steps">
+                <span
+                  v-for="step in adaptSteps"
+                  :key="step.key"
+                  :class="adaptStepState(adaptProgress[submission.id], step)"
+                >{{ step.label }}</span>
+              </div>
+            </div>
             <div v-if="parsedProfile(submission)" class="parse-profile">
               <strong>自动解析预检结果</strong>
               <div class="pp-grid">
+                <template v-if="parsedProfile(submission).fileName">
+                  <span>文件名</span><em>{{ parsedProfile(submission).fileName }}</em>
+                </template>
                 <span>格式</span><em>{{ parsedProfile(submission).format || '-' }}</em>
                 <span>状态</span><em>{{ parsedProfile(submission).status || '-' }}</em>
+                <template v-if="parsedProfile(submission).sizeBytes">
+                  <span>远程大小</span><em>{{ formatBytes(parsedProfile(submission).sizeBytes) }}</em>
+                </template>
+                <template v-if="parsedProfile(submission).sampleBytes">
+                  <span>样本大小</span><em>{{ formatBytes(parsedProfile(submission).sampleBytes) }}</em>
+                </template>
+                <template v-if="parsedProfile(submission).sampled !== undefined">
+                  <span>抽样状态</span><em>{{ parsedProfile(submission).sampled ? '样本截断 / Range 抽样' : '未截断' }}</em>
+                </template>
                 <template v-if="parsedProfile(submission).recordEstimate">
                   <span>记录</span><em>{{ parsedProfile(submission).recordEstimate }}</em>
                 </template>
@@ -932,6 +1034,9 @@ function formatDate(value) {
                   <span>元素</span><em>{{ parsedProfile(submission).elements.join(' ') }}</em>
                 </template>
               </div>
+              <p v-if="parsedProfile(submission).summary" class="pp-summary">
+                {{ parsedProfile(submission).summary }}
+              </p>
               <p v-if="parsedProfile(submission).fields && parsedProfile(submission).fields.length" class="pp-fields">
                 字段/列：{{ parsedProfile(submission).fields.join('、') }}
               </p>
@@ -2146,6 +2251,97 @@ textarea {
   background: color-mix(in srgb, var(--vs-cyan-100) 30%, var(--vs-card));
 }
 
+.adapt-progress {
+  margin-top: 10px;
+  padding: 11px;
+  border: 1px solid color-mix(in srgb, var(--vs-primary) 26%, var(--vs-border));
+  border-radius: var(--vs-radius-sm);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--vs-primary) 7%, transparent), transparent 54%),
+    color-mix(in srgb, var(--vs-card) 92%, var(--vs-cyan-100));
+}
+
+.adapt-progress.done {
+  border-color: color-mix(in srgb, #16a36b 34%, var(--vs-border));
+}
+
+.adapt-progress.failed {
+  border-color: color-mix(in srgb, #d85a5a 38%, var(--vs-border));
+}
+
+.adapt-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.adapt-progress-head strong,
+.adapt-progress-head span {
+  color: var(--vs-text);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.adapt-progress-track {
+  height: 7px;
+  margin-top: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vs-primary) 10%, var(--vs-card));
+}
+
+.adapt-progress-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--vs-primary), var(--vs-cyan-500));
+  transition: width .28s ease;
+}
+
+.adapt-progress.failed .adapt-progress-track i {
+  background: linear-gradient(90deg, #d85a5a, #ef9a9a);
+}
+
+.adapt-progress p {
+  margin: 8px 0 0;
+  color: var(--vs-text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.adapt-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.adapt-steps span {
+  padding: 4px 7px;
+  border: 1px solid var(--vs-border);
+  border-radius: 999px;
+  color: var(--vs-text-tertiary);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.adapt-steps span.done {
+  border-color: color-mix(in srgb, var(--vs-cyan-500) 42%, var(--vs-border));
+  background: color-mix(in srgb, var(--vs-cyan-100) 48%, var(--vs-card));
+  color: var(--vs-primary);
+}
+
+.adapt-steps span.active {
+  border-color: var(--vs-primary);
+  color: var(--vs-primary);
+}
+
+.adapt-steps span.blocked {
+  border-color: color-mix(in srgb, #d85a5a 40%, var(--vs-border));
+  color: #c34b4b;
+}
+
 .parse-profile > strong {
   color: var(--vs-text);
   font-size: 12px;
@@ -2175,6 +2371,16 @@ textarea {
   color: var(--vs-text-secondary);
   font-size: 11px;
   line-height: 1.5;
+}
+
+.pp-summary {
+  margin: 9px 0 0;
+  padding: 8px 9px;
+  border-radius: var(--vs-radius-sm);
+  background: color-mix(in srgb, var(--vs-card) 70%, var(--vs-cyan-100));
+  color: var(--vs-text-secondary);
+  font-size: 11px;
+  line-height: 1.55;
 }
 
 .pp-warn {
