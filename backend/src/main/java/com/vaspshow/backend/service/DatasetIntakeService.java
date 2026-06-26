@@ -45,6 +45,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import org.apache.commons.compress.archivers.ArchiveEntry;
@@ -321,7 +323,18 @@ public class DatasetIntakeService {
     Map<String, Object> profile = parseProfileMap(submission.parseProfile());
     profile.put("localSaveStartedAt", Instant.now().toString());
     try {
-      LocalDownloadResult saved = downloadSourceToLocal(id, submission.dataUrl());
+      ResolvedDataSource resolved = resolveDataSource(submission.dataUrl());
+      profile.put("originalDataUrl", submission.dataUrl());
+      profile.put("resolvedDataUrl", resolved.url());
+      profile.put("sourceKind", resolved.sourceKind());
+      if (!resolved.files().isEmpty()) {
+        profile.put("sourceFiles", resolved.files());
+        profile.put("archiveEntries", capList(resolved.files(), 40));
+      }
+      if (!resolved.usable()) {
+        throw new ApiException(HttpStatus.BAD_REQUEST, resolved.warning());
+      }
+      LocalDownloadResult saved = downloadSourceToLocal(id, resolved.url());
       profile.put("localSaved", true);
       profile.put("localPath", saved.path());
       profile.put("localFileName", saved.fileName());
@@ -361,7 +374,31 @@ public class DatasetIntakeService {
     String stage;
     String message;
     try {
-      DownloadSample sample = downloadSample(submission.dataUrl());
+      ResolvedDataSource resolved = resolveDataSource(submission.dataUrl());
+      profile.put("originalDataUrl", submission.dataUrl());
+      profile.put("resolvedDataUrl", resolved.url());
+      profile.put("sourceKind", resolved.sourceKind());
+      if (!resolved.files().isEmpty()) {
+        profile.put("sourceFiles", resolved.files());
+        profile.put("archiveEntries", capList(resolved.files(), 40));
+      }
+      if (!resolved.usable()) {
+        profile.put("status", "unsupported");
+        profile.put("format", "ZENODO_RECORD");
+        profile.put("fields", List.of());
+        profile.put("detectedFields", "metadata only");
+        profile.put("summary", resolved.warning());
+        stage = "ADAPTER_REQUIRED";
+        message = "自动解析预检未进入文件解析：" + resolved.warning();
+        return applyProfile(id, stage, message, toJson(profile));
+      }
+      DownloadSample sample = downloadSample(resolved.url());
+      if (!resolved.selectedFile().isBlank()) {
+        profile.put("selectedFile", resolved.selectedFile());
+      }
+      if (resolved.selectedSize() > 0) {
+        profile.put("selectedFileSizeBytes", resolved.selectedSize());
+      }
       profile.put("fileName", sample.fileName());
       profile.put("sizeBytes", sample.totalSize());
       profile.put("sampleBytes", sample.bytes().length);
@@ -470,6 +507,94 @@ public class DatasetIntakeService {
     }
     long total = declaredTotal > 0 ? declaredTotal : bytes.length;
     return new DownloadSample(bytes, total, truncated, fileNameFromUrl(url), contentType);
+  }
+
+  private ResolvedDataSource resolveDataSource(String dataUrl) throws Exception {
+    String url = dataUrl == null ? "" : dataUrl.trim();
+    String zenodoId = zenodoRecordId(url);
+    if (zenodoId.isBlank()) {
+      return new ResolvedDataSource(url, "DIRECT_URL", "", List.of(), 0L, "");
+    }
+    String apiUrl = "https://zenodo.org/api/records/" + zenodoId;
+    if (!OutboundUrlGuard.isSafe(apiUrl)) {
+      return new ResolvedDataSource(url, "ZENODO_RECORD", "", List.of(), 0L, "Zenodo API 地址未通过安全校验。");
+    }
+    HttpRequest request = HttpRequest.newBuilder(URI.create(apiUrl))
+        .GET()
+        .timeout(Duration.ofSeconds(20))
+        .header("User-Agent", "VASP-Show-zenodo-resolver")
+        .build();
+    HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+    if (response.statusCode() < 200 || response.statusCode() >= 300) {
+      return new ResolvedDataSource(url, "ZENODO_RECORD", "", List.of(), 0L,
+          "Zenodo 记录解析失败，HTTP " + response.statusCode() + "。");
+    }
+    JsonNode root = objectMapper.readTree(response.body());
+    List<ZenodoFile> files = new ArrayList<>();
+    JsonNode fileNodes = root.path("files");
+    if (fileNodes.isArray()) {
+      for (JsonNode file : fileNodes) {
+        String key = firstNonBlank(file.path("key").asText(""), file.path("filename").asText(""));
+        String download = firstNonBlank(
+            file.path("links").path("self").asText(""),
+            file.path("links").path("download").asText(""));
+        long size = file.path("size").asLong(file.path("filesize").asLong(0L));
+        if (!key.isBlank()) {
+          files.add(new ZenodoFile(key, download, size));
+        }
+      }
+    }
+    List<String> fileLabels = files.stream()
+        .map(file -> file.name() + (file.sizeBytes() > 0 ? " (" + file.sizeBytes() + " bytes)" : ""))
+        .toList();
+    ZenodoFile selected = bestZenodoFile(files);
+    if (selected == null || selected.url().isBlank()) {
+      String title = root.path("metadata").path("title").asText("Zenodo record " + zenodoId);
+      return new ResolvedDataSource(url, "ZENODO_RECORD", "", fileLabels, 0L,
+          "Zenodo 记录“" + title + "”未发现可直接入库的数据文件；当前文件包括 "
+              + (fileLabels.isEmpty() ? "空文件列表" : String.join("、", fileLabels))
+              + "。PDF、图片、Notebook 不会作为计算数据集自动入库。");
+    }
+    return new ResolvedDataSource(selected.url(), "ZENODO_RECORD", selected.name(), fileLabels, selected.sizeBytes(), "");
+  }
+
+  private static String zenodoRecordId(String url) {
+    if (url == null || url.isBlank()) {
+      return "";
+    }
+    Matcher record = Pattern.compile("zenodo\\.org/(?:records|record)/(\\d+)", Pattern.CASE_INSENSITIVE).matcher(url);
+    if (record.find()) {
+      return record.group(1);
+    }
+    Matcher doi = Pattern.compile("10\\.5281/zenodo\\.(\\d+)", Pattern.CASE_INSENSITIVE).matcher(url);
+    if (doi.find()) {
+      return doi.group(1);
+    }
+    return "";
+  }
+
+  private static ZenodoFile bestZenodoFile(List<ZenodoFile> files) {
+    ZenodoFile best = null;
+    int bestScore = 0;
+    for (ZenodoFile file : files) {
+      int score = archiveEntryScore(file.name());
+      if (isDocumentationOnlyFile(file.name())) {
+        score = 0;
+      }
+      if (score > bestScore) {
+        best = file;
+        bestScore = score;
+      }
+    }
+    return best;
+  }
+
+  private static boolean isDocumentationOnlyFile(String name) {
+    String lower = name == null ? "" : name.toLowerCase(Locale.ROOT);
+    return lower.endsWith(".pdf") || lower.endsWith(".ipynb") || lower.endsWith(".png")
+        || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".gif")
+        || lower.endsWith(".svg") || lower.endsWith(".doc") || lower.endsWith(".docx")
+        || lower.endsWith(".ppt") || lower.endsWith(".pptx");
   }
 
   private LocalDownloadResult downloadSourceToLocal(long id, String dataUrl) throws Exception {
@@ -1177,6 +1302,22 @@ public class DatasetIntakeService {
   }
 
   private record InnerBytes(byte[] bytes, boolean truncated) {
+  }
+
+  private record ResolvedDataSource(
+      String url,
+      String sourceKind,
+      String selectedFile,
+      List<String> files,
+      long selectedSize,
+      String warning
+  ) {
+    boolean usable() {
+      return warning == null || warning.isBlank();
+    }
+  }
+
+  private record ZenodoFile(String name, String url, long sizeBytes) {
   }
 
   private record LocalDownloadResult(String path, String fileName, long sizeBytes, String sha256, String contentType) {

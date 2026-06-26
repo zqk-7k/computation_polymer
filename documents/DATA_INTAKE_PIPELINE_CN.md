@@ -132,6 +132,8 @@
 
 格式识别优先使用文件魔数和 HTTP Content-Type，例如 HDF5、ZIP、GZIP、XZ、BZIP2、ZSTD、TAR 等会先按二进制头判断；若链接返回 HTML 页面，会识别为 `HTML`，说明该链接只是 DOI/Zenodo/Figshare 等入口页，不是具体数据文件下载地址。
 
+对 Zenodo 链接，系统会先做一次来源解析：如果填写的是 `zenodo.org/doi/...`、`zenodo.org/records/...` 或 `10.5281/zenodo.xxxxx`，后端会调用 Zenodo records API 获取文件列表，再从中选择 HDF5、XYZ、CIF、CSV、JSON、压缩包等数据型文件作为实际读取对象。PDF、图片、Word、PPT、Notebook 等只作为说明材料，不会被当作计算数据集自动预检或入库；如果记录里只有这些文件，预检会显示 `ZENODO_RECORD` 且提示“未发现可直接入库的数据文件”。
+
 当前默认配置：
 
 - 小文件：最多读取 `VASP_DISCOVERY_AUTOADAPT_MAX_MB`，默认 50 MB；

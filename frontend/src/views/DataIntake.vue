@@ -1090,6 +1090,12 @@ function formatDate(value) {
                 <template v-if="parsedProfile(submission).fileName">
                   <span>文件名</span><em>{{ parsedProfile(submission).fileName }}</em>
                 </template>
+                <template v-if="parsedProfile(submission).sourceKind">
+                  <span>来源类型</span><em>{{ parsedProfile(submission).sourceKind }}</em>
+                </template>
+                <template v-if="parsedProfile(submission).selectedFile">
+                  <span>选中文件</span><em>{{ parsedProfile(submission).selectedFile }}</em>
+                </template>
                 <span>格式</span><em>{{ parsedProfile(submission).format || '-' }}</em>
                 <span>状态</span><em>{{ parsedProfile(submission).status || '-' }}</em>
                 <template v-if="parsedProfile(submission).containerFormat">
