@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>高分子材料科学数据库 - 3.0 科技增强版</title>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <style>
+    body {
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      color: #e2e8f0;
+      font-family: 'Segoe UI', sans-serif;
+    }
+    .glass-card {
+      background: rgba(30, 41, 59, 0.5);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+    .tab-active {
+      @apply bg-cyan-500 text-slate-900 font-bold;
+      box-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
+    }
+    .chart-container {
+      height: 300px;
+    }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body class="min-h-screen">
+  <header class="border-b border-slate-700 glass-card">
+    <div class="container mx-auto flex justify-between items-center px-6 py-4">
+      <div class="flex items-center space-x-2">
+        <div class="w-3 h-3 bg-cyan-400 rounded-full animate-pulse"></div>
+        <h1 class="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+          PolymerQuantum Lab
+        </h1>
+      </div>
+      <span class="text-slate-400 text-sm">高分子计算数据库 v3.0</span>
+    </div>
+  </header>
+
+  <main class="container mx-auto px-4 py-8">
+    <div class="glass-card p-6 mb-6">
+      <div class="flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <h2 class="text-xl font-bold text-cyan-300">聚乙烯 (PE) - 原子级模拟报告</h2>
+          <p class="text-slate-400 mt-1">Material ID: POLY-2026-001 | Force Field: COMPASS II</p>
+        </div>
+        <div class="flex space-x-2">
+          <span class="px-3 py-1 bg-green-500/20 text-green-400 text-xs rounded-full border border-green-500/30">Validated</span>
+          <span class="px-3 py-1 bg-slate-600 text-slate-300 text-xs rounded-full">MD Simulation</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 标签按钮 -->
+    <div class="flex flex-wrap gap-2 mb-6 overflow-x-auto pb-2">
+      <button class="tab-btn px-5 py-2 rounded-full border border-cyan-500/30 tab-active" data-target="tab1">分子拓扑</button>
+      <button class="tab-btn px-5 py-2 rounded-full border border-cyan-500/30" data-target="tab2">模拟参数</button>
+      <button class="tab-btn px-5 py-2 rounded-full border border-cyan-500/30" data-target="tab3">热力学溯源</button>
+      <button class="tab-btn px-5 py-2 rounded-full border border-cyan-500/30" data-target="tab4">力学性能</button>
+      <button class="tab-btn px-5 py-2 rounded-full border border-cyan-500/30" data-target="tab5">电子结构</button>
+      <button class="tab-btn px-5 py-2 rounded-full border border-cyan-500/30" data-target="tab6">元数据</button>
+    </div>
+
+    <div class="glass-card p-6 min-h-[60vh]">
+      <!-- 1 -->
+      <div id="tab1" class="tab-content">
+        <h2 class="text-xl font-bold mb-4 text-cyan-400">分子结构与拓扑</h2>
+        <div class="grid md:grid-cols-2 gap-6">
+          <div class="space-y-3 bg-slate-800/50 p-5 rounded-lg">
+            <p>SMILES: <code class="bg-black px-2 py-1 rounded">CC</code></p>
+            <p>聚合度 (DP): 100</p>
+            <p>回转半径 (Rg): 18.6 Å</p>
+            <p>链构象: 全反式 (Trans)</p>
+          </div>
+          <div class="border border-slate-600 rounded-lg flex items-center justify-center">
+            <div class="text-center py-10">3D Molecular Viewer</div>
+          </div>
+        </div>
+      </div>
+      <!-- 2 -->
+      <div id="tab2" class="tab-content hidden">
+        <h2 class="text-xl font-bold mb-4 text-cyan-400">计算环境与参数</h2>
+        <table class="w-full text-sm">
+          <tr class="border-b"><td>软件</td><td>LAMMPS</td></tr>
+          <tr class="border-b"><td>力场</td><td>COMPASS II</td></tr>
+          <tr class="border-b"><td>系综</td><td>NPT</td></tr>
+          <tr class="border-b"><td>温度</td><td>300 K</td></tr>
+        </table>
+      </div>
+      <!-- 3 -->
+      <div id="tab3" class="tab-content hidden">
+        <h2 class="text-xl font-bold mb-4 text-cyan-400">热力学性能</h2>
+        <div class="p-4 bg-slate-800/30 rounded-lg mb-4">
+          <h3>密度: 0.95 g/cm³</h3>
+          <div class="chart-container"><canvas id="densityChart"></canvas></div>
+        </div>
+        <div class="p-4 bg-slate-800/30 rounded-lg">
+          <h3>Tg: 190 K</h3>
+          <div class="chart-container"><canvas id="tgChart"></canvas></div>
+        </div>
+      </div>
+      <!-- 4 -->
+      <div id="tab4" class="tab-content hidden">
+        <h2 class="text-xl font-bold mb-4 text-cyan-400">力学性能</h2>
+        <div class="p-4 bg-slate-800/30 rounded-lg">
+          <h3>杨氏模量: 1.2 GPa</h3>
+          <div class="chart-container"><canvas id="stressStrainChart"></canvas></div>
+        </div>
+      </div>
+      <!-- 5 -->
+      <div id="tab5" class="tab-content hidden">
+        <h2 class="text-xl font-bold mb-4 text-cyan-400">电子结构</h2>
+        <div class="grid md:grid-cols-2 gap-6 mb-6">
+          <div class="p-5 rounded-lg text-center">HOMO: -5.42 eV</div>
+          <div class="p-5 rounded-lg text-center">LUMO: -2.15 eV</div>
+        </div>
+        <div class="chart-container"><canvas id="dosChart"></canvas></div>
+      </div>
+      <!-- 6 元数据 -->
+      <div id="tab6" class="tab-content hidden">
+        <h2 class="text-xl font-bold text-cyan-400 mb-6">元数据 & 文献溯源</h2>
+        <div class="grid md:grid-cols-2 gap-6">
+          <div class="p-5 bg-slate-800/50 rounded-lg">
+            <p>材料ID：POLY-2026-001</p>
+            <p>DOI：10.1016/j.polymer.2023.125689</p>
+            <p>分类：聚烯烃 / 通用塑料</p>
+          </div>
+          <div class="p-5 bg-slate-800/50 rounded-lg">
+            <p>计算平台：超算集群</p>
+            <p>计算耗时：12.5h</p>
+            <p>验证状态：已通过</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // ====================== 极简稳定版 标签切换（100%可用）======================
+    const tabs = document.querySelectorAll('.tab-btn');
+    const contents = document.querySelectorAll('.tab-content');
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        // 重置所有标签
+        tabs.forEach(t => t.classList.remove('tab-active'));
+        // 激活当前标签
+        tab.classList.add('tab-active');
+        // 隐藏所有内容
+        contents.forEach(c => c.classList.add('hidden'));
+        // 显示对应内容
+        const target = tab.getAttribute('data-target');
+        document.getElementById(target).classList.remove('hidden');
+        // 绘制图表
+        initCharts();
+      });
+    });
+
+    // ====================== 图表初始化 ======================
+    let charts = {};
+    function initCharts() {
+      const opt = { maintainAspectRatio: false, tension: 0.3, borderColor: '#06b6d4', fill: true };
+      
+      if(!charts.density) charts.density = new Chart(document.getElementById('densityChart'),{
+        type:'line',data:{labels:Array(50).fill(0).map((_,i)=>200+i*5),datasets:[{...opt,data:Array(50).fill(0.95)}]}
+      });
+      if(!charts.tg) charts.tg = new Chart(document.getElementById('tgChart'),{
+        type:'line',data:{labels:Array(60).fill(0).map((_,i)=>100+i*5),datasets:[{...opt,data:Array(60).fill(100)}]}
+      });
+      if(!charts.stress) charts.stress = new Chart(document.getElementById('stressStrainChart'),{
+        type:'line',data:{labels:Array(40).fill(0).map((_,i)=>i*0.5),datasets:[{...opt,data:Array(40).fill(1.2)}]}
+      });
+      if(!charts.dos) charts.dos = new Chart(document.getElementById('dosChart'),{
+        type:'line',data:{labels:Array(50).fill(0).map((_,i)=>-10+i*0.4),datasets:[{...opt,borderColor:'#8b5cf6',data:Array(50).fill(0)}]}
+      });
+    }
+
+    // 页面加载初始化
+    window.onload = initCharts;
+  </script>
+</body>
+</html>

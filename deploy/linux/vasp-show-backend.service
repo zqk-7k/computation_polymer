@@ -1,0 +1,13 @@
+[Unit]
+Description=VASP Show Backend
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/vasp-show
+ExecStart=/usr/bin/java -jar /opt/vasp-show/backend/vasp-show-backend.jar --server.port=8080 --vasp.datasets.display-db-path=documents/data/frontend_template_data
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

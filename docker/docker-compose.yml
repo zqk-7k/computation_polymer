@@ -1,0 +1,24 @@
+name: vasp-show
+
+services:
+  backend:
+    image: vasp-show-backend:latest
+    build:
+      context: ..
+      dockerfile: docker/backend.Dockerfile
+    environment:
+      JAVA_OPTS: "-XX:MaxRAMPercentage=75.0"
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  frontend:
+    image: vasp-show-frontend:latest
+    build:
+      context: ..
+      dockerfile: docker/frontend.Dockerfile
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-8088}:80"
+    restart: unless-stopped

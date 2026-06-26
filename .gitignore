@@ -1,0 +1,62 @@
+# Runtime logs
+*.log
+logs/
+output/
+
+# Java / Maven build output
+backend/target/
+*.class
+*.jar
+
+# Frontend dependencies and build output
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# IDE / OS files
+.idea/
+.vscode/
+.claude/settings.local.json
+.DS_Store
+Thumbs.db
+
+# Local databases and generated data stores
+*.mv.db
+*.trace.db
+*.lock.db
+
+# Large/raw dataset files are intentionally not tracked.
+documents/data/*
+!documents/data/README.md
+backend/src/main/resources/data/*
+!backend/src/main/resources/data/README.md
+documents/chat_history/
+documents/demo/*.docx
+
+# Common scientific data / archive artifacts
+*.h5
+*.hdf5
+*.lmdb
+*.aselmdb
+*.xlsx
+*.parquet
+*.npy
+*.npz
+*.cif.gz
+*.xyz.gz
+*.extxyz.gz
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.7z
+*.zst
+
+# Keep source-controlled documentation archives only if explicitly force-added.

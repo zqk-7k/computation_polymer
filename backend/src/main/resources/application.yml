@@ -1,0 +1,57 @@
+server:
+  port: 8080
+
+debug: false
+
+vasp:
+  datasets:
+    ani-path: classpath:data/ani_gdb_s03.h5
+    display-db-path: documents/data/frontend_template_data
+    display-writable: ${VASP_DISPLAY_WRITABLE:false}
+  auth:
+    db-path: documents/data/vasp_auth
+    super-admin-password: ${VASP_SUPERADMIN_PASSWORD:ChangeMe-SuperAdmin-2026!}
+    admin-password: ${VASP_ADMIN_PASSWORD:ChangeMe-Admin-2026!}
+  assistant:
+    enabled: ${VASP_ASSISTANT_ENABLED:true}
+    base-url: ${OLLAMA_BASE_URL:http://127.0.0.1:11434}
+    model: ${OLLAMA_MODEL:qwen3:8b}
+    keep-alive: ${OLLAMA_KEEP_ALIVE:30m}
+    connect-timeout-seconds: ${OLLAMA_CONNECT_TIMEOUT_SECONDS:5}
+    request-timeout-seconds: ${OLLAMA_REQUEST_TIMEOUT_SECONDS:180}
+  intake:
+    db-path: documents/data/vasp_intake
+    discovery:
+      enabled: ${VASP_DISCOVERY_ENABLED:true}
+      cron: ${VASP_DISCOVERY_CRON:0 15 3 ? * MON}
+      max-results-per-query: ${VASP_DISCOVERY_PAGE_SIZE:8}
+      contact-email: ${VASP_DISCOVERY_CONTACT:}
+      datacite: ${VASP_DISCOVERY_DATACITE:true}
+      zenodo: ${VASP_DISCOVERY_ZENODO:true}
+      nomad: ${VASP_DISCOVERY_NOMAD:true}
+      figshare: ${VASP_DISCOVERY_FIGSHARE:true}
+      dryad: ${VASP_DISCOVERY_DRYAD:true}
+      openaire: ${VASP_DISCOVERY_OPENAIRE:true}
+      validate:
+        enabled: ${VASP_DISCOVERY_VALIDATE:true}
+      auto-promote:
+        enabled: ${VASP_DISCOVERY_AUTOPROMOTE:true}
+        min-score: ${VASP_DISCOVERY_AUTOPROMOTE_MIN_SCORE:82}
+        min-relevance: ${VASP_DISCOVERY_AUTOPROMOTE_MIN_RELEVANCE:44}
+        require-license: ${VASP_DISCOVERY_AUTOPROMOTE_REQUIRE_LICENSE:true}
+        require-validation-pass: ${VASP_DISCOVERY_AUTOPROMOTE_REQUIRE_VALIDATION_PASS:false}
+        max-per-run: ${VASP_DISCOVERY_AUTOPROMOTE_MAX_PER_RUN:10}
+      auto-archive:
+        enabled: ${VASP_DISCOVERY_AUTOARCHIVE:false}
+        max-score: ${VASP_DISCOVERY_AUTOARCHIVE_MAX_SCORE:30}
+      auto-adapt:
+        enabled: ${VASP_DISCOVERY_AUTOADAPT:false}
+        max-download-mb: ${VASP_DISCOVERY_AUTOADAPT_MAX_MB:50}
+        sample-mb: ${VASP_DISCOVERY_AUTOADAPT_SAMPLE_MB:4}
+  quality:
+    python-command: ${VASP_QUALITY_PYTHON:D:/anaconda3/python.exe}
+
+logging:
+  level:
+    io.jhdf: warn
+    org.springframework: info

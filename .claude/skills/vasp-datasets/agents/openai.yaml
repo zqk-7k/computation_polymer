@@ -1,0 +1,4 @@
+interface:
+  display_name: "VASP Datasets"
+  short_description: "Inspect local molecular dataset schemas"
+  default_prompt: "Use $vasp-datasets to inspect and summarize the local HDF5 and ASE-LMDB datasets."

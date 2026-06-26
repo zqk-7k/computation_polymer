@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据中心</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+        }
+
+        body {
+            background-color: #f5f7fa;
+            color: #333;
+        }
+
+        /* 顶部导航栏 */
+        .header {
+            display: flex;
+            align-items: center;
+            height: 65px;
+            background: #ffffff;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            position: sticky;
+            top: 0;
+            z-index: 99;
+        }
+
+        .logo {
+            width: 180px;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .logo-oval {
+            width: 110px;
+            height: 40px;
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            border-radius: 999px;
+            color: white;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 3px 6px rgba(59,130,246,0.3);
+        }
+
+        .nav-menu {
+            display: flex;
+            height: 100%;
+        }
+
+        .nav-item {
+            width: 120px;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            font-weight: 500;
+            color: #555;
+            cursor: pointer;
+            transition: all 0.25s ease;
+        }
+
+        .nav-item:hover {
+            color: #2563eb;
+            background: #eff6ff;
+        }
+
+        .nav-item.active {
+            color: #2563eb;
+            border-bottom: 3px solid #2563eb;
+            font-weight: 600;
+        }
+
+        .login-register {
+            margin-left: auto;
+            padding: 0 24px;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            font-weight: 500;
+            color: #2563eb;
+            cursor: pointer;
+            transition: 0.25s;
+        }
+
+        .login-register:hover {
+            color: #1d4ed8;
+            text-decoration: underline;
+        }
+
+        .main-content {
+            max-width: 1300px;
+            margin: 50px auto;
+            padding: 0 20px;
+        }
+
+        .content-panel {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .content-panel.show {
+            display: block;
+        }
+
+        .dataset-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 30px;
+        }
+
+        .dataset-card {
+            background: #fff;
+            border-radius: 14px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            transition: transform 0.3s, box-shadow 0.3s;
+            cursor: pointer;
+        }
+
+        .dataset-card:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 10px 24px rgba(0,0,0,0.08);
+        }
+
+        .card-title {
+            padding: 16px 20px;
+            background: linear-gradient(to right, #eff6ff, #dbeafe);
+            font-size: 16px;
+            font-weight: 600;
+            color: #1e40af;
+            border-bottom: 1px solid #dbeafe;
+        }
+
+        .card-content {
+            padding: 22px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .tag {
+            width: fit-content;
+            padding: 6px 14px;
+            background: #3b82f6;
+            color: white;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            box-shadow: 0 2px 4px rgba(59,130,246,0.2);
+        }
+
+        .intro-box {
+            padding: 14px;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            background: #fafbfc;
+            font-size: 14px;
+            color: #64748b;
+            line-height: 1.5;
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+        }
+
+        .empty-panel {
+            min-height: 400px;
+            background: #fff;
+            border-radius: 14px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #94a3b8;
+            font-size: 16px;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ========== 详情页全局美化 ========== */
+        .detail-page {
+            display: none;
+            animation: fadeIn 0.4s ease;
+        }
+        .detail-page.show {
+            display: block;
+        }
+
+        /* 面包屑 */
+        .breadcrumb {
+            font-size: 14px;
+            color: #64748b;
+            margin-bottom: 28px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .breadcrumb .back-link {
+            color: #2563eb;
+            font-weight: 500;
+            text-decoration: none;
+            padding: 6px 14px;
+            border-radius: 8px;
+            background: #eff6ff;
+            transition: all 0.25s ease;
+        }
+        .breadcrumb .back-link:hover {
+            background: #2563eb;
+            color: #fff;
+        }
+
+        /* 详情整体布局 */
+        .detail-container {
+            display: grid;
+            grid-template-columns: 2.5fr 1fr;
+            gap: 28px;
+            margin-bottom: 28px;
+        }
+
+        /* 左侧主卡片 - 加相对定位，给右上角下载做参照 */
+        .detail-left {
+            background: #ffffff;
+            border-radius: 20px;
+            padding: 32px;
+            box-shadow: 0 8px 24px rgba(37, 99, 235, 0.1);
+            border: none;
+            position: relative;
+        }
+        .dataset-name {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 26px;
+            letter-spacing: 1px;
+        }
+
+        /* 标签切换按钮 */
+        .tab-bar {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 26px;
+        }
+        .tab-btn {
+            padding: 10px 28px;
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            color: #eff6ff;
+            background: #3b82f6;
+            cursor: pointer;
+            transition: all 0.25s ease;
+        }
+
+        /* 下载模块：固定在左侧卡片 右上角 */
+        .download-box {
+            position: absolute;
+            top: 24px;
+            right: 24px;
+            background: #dbeafe;
+            border: 1px solid #bfdbfe;
+            border-radius: 12px;
+            padding: 8px 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #2563eb;
+            cursor: pointer;
+            transition: 0.2s;
+            z-index: 10;
+        }
+        .download-box:hover {
+            background: #bfdbfe;
+        }
+
+        /* 双列内容区块 */
+        .detail-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            height: 320px;
+        }
+        .detail-box {
+            padding: 36px 24px;
+            border-radius: 18px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            font-size: 15px;
+            color: #475569;
+            line-height: 1.7;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 12px;
+            transition: all 0.3s ease;
+        }
+        .detail-box:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.04);
+        }
+        .detail-box.blue-box {
+            background: rgba(59, 130, 246, 0.08);
+            border: 1px solid rgba59, 130, 246, 0.2;
+            color: #2563eb;
+            font-weight: 500;
+            height: 100%;
+            width: 100%;
+        }
+
+        /* 右侧使用建议卡片 */
+        .detail-right {
+            background: #ffffff;
+            border-radius: 20px;
+            padding: 32px 24px;
+            box-shadow: 0 8px 24px rgba(37, 99, 235, 0.1);
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .suggestion-card {
+            text-align: center;
+            width: 100%;
+        }
+        .suggestion-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            color: #2563eb;
+        }
+        .suggestion-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 14px;
+        }
+        .suggestion-desc {
+            font-size: 15px;
+            color: #64748b;
+            line-height: 1.8;
+        }
+
+        /* 底部实例栏 */
+        .instance-bar {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            background: #fff;
+            padding: 24px 28px;
+            border-radius: 20px;
+            box-shadow: 0 8px 24px rgba(37, 99, 235, 0.1);
+            border: none;
+            margin-bottom: 20px;
+        }
+        .instance-btn.add {
+            padding: 10px 22px;
+            border-radius: 12px;
+            border: none;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            background: #fef2f2;
+            color: #dc2626;
+        }
+        .instance-btn.add:hover {
+            background: #fee2e2;
+            transform: translateY(-2px);
+        }
+        .instance-item-card {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #f0fdf4;
+            padding: 10px 18px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #16a34a;
+            box-shadow: 0 2px 8px rgba(22, 163, 74, 0.15);
+            transition: all 0.25s ease;
+            cursor: pointer;
+        }
+        .instance-item-card:hover {
+            transform: translateY(-2px);
+        }
+        .instance-item-card .close-btn {
+            background: none;
+            border: none;
+            color: #dc2626;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 0 6px;
+            border-radius: 50%;
+            width: 22px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: 0.2s;
+        }
+        .instance-item-card .close-btn:hover {
+            background: #fee2e2;
+        }
+
+        /* 实例详情子导航 */
+        .instance-detail-wrap {
+            display: none;
+            animation: fadeIn 0.4s ease;
+        }
+        .instance-detail-wrap.show {
+            display: block;
+        }
+        .sub-nav-bar {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+        }
+        .sub-tab-btn {
+            padding: 10px 20px;
+            border-radius: 10px;
+            background: #eff6ff;
+            color: #2563eb;
+            font-size: 14px;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .sub-tab-btn.active {
+            background: #3b82f6;
+            color: #fff;
+        }
+        .sub-tab-content {
+            background: #fff;
+            border-radius: 16px;
+            padding: 28px;
+            box-shadow: 0 8px 24px rgba(37,99,235,0.1);
+            display: none;
+        }
+        .sub-tab-content.active {
+            display: block;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 16px;
+        }
+        .info-item {
+            background: #f8fafc;
+            padding: 16px;
+            border-radius: 12px;
+            border: 1px solid #e2e8f0;
+        }
+        .info-item h4 {
+            font-size: 13px;
+            color: #64748b;
+            margin-bottom: 6px;
+        }
+        .info-item p {
+            font-size: 15px;
+            font-weight: 500;
+            color: #1e293b;
+        }
+        /* 3D图像预留容器 */
+        .model-3d-wrap {
+            width: 100%;
+            height: 360px;
+            margin-top: 20px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #64748b;
+            font-size: 15px;
+        }
+    </style>
+</head>
+<body>
+
+<!-- 顶部导航 -->
+<div class="header">
+    <div class="logo">
+        <div class="logo-oval">LOGO</div>
+    </div>
+    <div class="nav-menu">
+        <div class="nav-item active" data-tab="data">数据中心</div>
+        <div class="nav-item" data-tab="model">模型</div>
+        <div class="nav-item" data-tab="workflow">工作流</div>
+    </div>
+    <div class="login-register">登录 / 注册</div>
+</div>
+
+<!-- 主体内容切换区域 -->
+<div class="main-content">
+    <!-- 数据中心面板 -->
+    <div class="content-panel show" id="data">
+        <div class="dataset-container">
+            <div class="dataset-card">
+                <div class="card-title"># 数据集 A</div>
+                <div class="card-content">
+                    <div class="tag"># 泛函和基组</div>
+                    <div class="tag"># 数据规模</div>
+                    <div class="intro-box"># 数据集简要介绍</div>
+                </div>
+            </div>
+
+            <div class="dataset-card" id="card-omol25">
+                <div class="card-title">OMol25-0-train</div>
+                <div class="card-content">
+                    <div class="tag">ωB97M-V/def2-TZVPD</div>
+                    <div class="tag">101,666,280条</div>
+                    <div class="intro-box">Meta 与伯克利实验室发布的通用分子 DFT 数据集，覆盖 83 种元素、生物 / 金属 / 电解质等体系，最大 350 原子，用于训练通用机器学习原子间势。</div>
+                </div>
+            </div>
+
+            <div class="dataset-card">
+                <div class="card-title">OPoly26-train</div>
+                <div class="card-content">
+                    <div class="tag">ωB97M-V/def2-TZVPD</div>
+                    <div class="tag">5,902,827</div>
+                    <div class="intro-box">Meta 与 LLNL 发布的聚合物专用 DFT 数据集，覆盖单体 / 链结构 / 溶剂化，最大 360 原子簇，专为高分子材料机器学习势函数开发。</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模型面板 初始为空 -->
+    <div class="content-panel" id="model">
+        <div class="empty-panel">模型板块内容待添加</div>
+    </div>
+
+    <!-- 工作流面板 初始为空 -->
+    <div class="content-panel" id="workflow">
+        <div class="empty-panel">工作流板块内容待添加</div>
+    </div>
+
+    <!-- OMol25-0-train 详情页 -->
+    <div class="detail-page" id="detail-omol25">
+        <div class="breadcrumb">
+            <a href="#" class="back-link" id="back-to-data">← 返回</a>
+            <span>数据中心 > OMol25-0-train</span>
+        </div>
+
+        <div class="detail-container">
+            <div class="detail-left">
+                <div class="download-box">
+                    <span>📥</span> 数据下载
+                </div>
+
+                <div class="dataset-name">OMol25-0-train</div>
+
+                <div class="tab-bar">
+                    <button class="tab-btn active">ωB97M-V/def2-TZVPD</button>
+                    <button class="tab-btn">101,666,280条</button>
+                </div>
+
+                <div class="detail-content">
+                    <div class="detail-box">
+                        <div style="font-weight:600; margin-bottom:8px;"># 数据集详细介绍</div>
+                        <div style="text-align:center; line-height:1.7;">
+                            XXX
+                        </div>
+                    </div>
+                    <div class="detail-box blue-box">
+                        <div style="font-weight:600; font-size:16px;">数据库示意图</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="detail-right">
+                <div class="suggestion-card">
+                    <div class="suggestion-icon">📊</div>
+                    <div class="suggestion-title">使用建议</div>
+                    <div class="suggestion-desc">
+                        XXX
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="instance-bar" id="instanceBar">
+            <button class="instance-btn add" id="addInstanceBtn">+ 添加数据实例</button>
+            <!-- 默认实例1 -->
+            <div class="instance-item-card">
+                <span>实例 1</span>
+                <button class="close-btn">×</button>
+            </div>
+        </div>
+
+        <!-- 实例详情容器 动态生成 -->
+        <div id="instanceDetailContainer"></div>
+    </div>
+</div>
+
+<script>
+    // 全局实例计数
+    let instanceCount = 1;
+    const maxInstances = 5;
+    const instanceBar = document.getElementById('instanceBar');
+    const detailContainer = document.getElementById('instanceDetailContainer');
+
+    // 默认实例详情模板
+    function getInstanceDetailTpl(idx){
+        return `
+        <div class="instance-detail-wrap ${idx===1?'show':''}" data-instance-wrap="${idx}">
+            <div class="sub-nav-bar">
+                <button class="sub-tab-btn active" data-target="${idx}" data-content="c1">分子拓扑</button>
+                <button class="sub-tab-btn" data-target="${idx}" data-content="c2">模拟参数</button>
+                <button class="sub-tab-btn" data-target="${idx}" data-content="c3">热力学溯源</button>
+                <button class="sub-tab-btn" data-target="${idx}" data-content="c4">力学性能</button>
+                <button class="sub-tab-btn" data-target="${idx}" data-content="c5">电子结构</button>
+                <button class="sub-tab-btn" data-target="${idx}" data-content="c6">元数据</button>
+            </div>
+
+            <div class="sub-tab-content active" data-wrap="${idx}" id="c1-${idx}">
+                <div class="info-grid">
+                    <div class="info-item"><h4>SMILES</h4><p>CC</p></div>
+                    <div class="info-item"><h4>聚合度 DP</h4><p>100</p></div>
+                    <div class="info-item"><h4>回转半径 Rg</h4><p>18.6 Å</p></div>
+                    <div class="info-item"><h4>链构象</h4><p>全反式</p></div>
+                </div>
+                <!-- 3D图像预留区域 直接嵌入模型即可 -->
+                <div class="model-3d-wrap">
+                    3D 分子模型展示区域（预留）
+                </div>
+            </div>
+
+            <div class="sub-tab-content" data-wrap="${idx}" id="c2-${idx}">
+                <div class="info-grid">
+                    <div class="info-item"><h4>计算软件</h4><p>LAMMPS</p></div>
+                    <div class="info-item"><h4>力场</h4><p>COMPASS II</p></div>
+                    <div class="info-item"><h4>系综</h4><p>NPT</p></div>
+                    <div class="info-item"><h4>温度</h4><p>300 K</p></div>
+                </div>
+            </div>
+
+            <div class="sub-tab-content" data-wrap="${idx}" id="c3-${idx}">
+                <div class="info-grid">
+                    <div class="info-item"><h4>密度</h4><p>0.95 g/cm³</p></div>
+                    <div class="info-item"><h4>玻璃化温度 Tg</h4><p>190 K</p></div>
+                </div>
+            </div>
+
+            <div class="sub-tab-content" data-wrap="${idx}" id="c4-${idx}">
+                <div class="info-grid">
+                    <div class="info-item"><h4>杨氏模量</h4><p>1.2 GPa</p></div>
+                    <div class="info-item"><h4>拉伸强度</h4><p>28 MPa</p></div>
+                </div>
+            </div>
+
+            <div class="sub-tab-content" data-wrap="${idx}" id="c5-${idx}">
+                <div class="info-grid">
+                    <div class="info-item"><h4>HOMO</h4><p>-5.42 eV</p></div>
+                    <div class="info-item"><h4>LUMO</h4><p>-2.15 eV</p></div>
+                </div>
+            </div>
+
+            <div class="sub-tab-content" data-wrap="${idx}" id="c6-${idx}">
+                <div class="info-grid">
+                    <div class="info-item"><h4>材料ID</h4><p>POLY-2026-001</p></div>
+                    <div class="info-item"><h4>DOI</h4><p>10.1016/j.polymer.2023.125689</p></div>
+                    <div class="info-item"><h4>计算平台</h4><p>超算集群</p></div>
+                    <div class="info-item"><h4>验证状态</h4><p>已通过</p></div>
+                </div>
+            </div>
+        </div>
+        `;
+    }
+
+    // 初始化实例1详情
+    detailContainer.innerHTML = getInstanceDetailTpl(1);
+
+    // 绑定子标签切换
+    function bindSubTabEvent(){
+        const subTabs = document.querySelectorAll('.sub-tab-btn');
+        subTabs.forEach(tab => {
+            tab.onclick = function(){
+                const wrapIdx = this.dataset.target;
+                const cid = this.dataset.content;
+                // 同组标签重置
+                const sameGroupTabs = document.querySelectorAll(`.sub-tab-btn[data-target="${wrapIdx}"]`);
+                sameGroupTabs.forEach(t=>t.classList.remove('active'));
+                this.classList.add('active');
+                // 同组内容隐藏
+                const sameGroupContents = document.querySelectorAll(`.sub-tab-content[data-wrap="${wrapIdx}"]`);
+                sameGroupContents.forEach(c=>c.classList.remove('active'));
+                document.getElementById(`${cid}-${wrapIdx}`).classList.add('active');
+            };
+        });
+    }
+    bindSubTabEvent();
+
+    // 绑定实例点击切换显示对应详情
+    function bindInstanceItemEvent(){
+        const items = document.querySelectorAll('.instance-item-card');
+        items.forEach(item=>{
+            item.onclick = function(e){
+                if(e.target.classList.contains('close-btn')) return;
+                let idx = this.querySelector('span').textContent.replace('实例 ','');
+                // 隐藏所有详情
+                document.querySelectorAll('.instance-detail-wrap').forEach(w=>w.classList.remove('show'));
+                // 显示当前实例详情
+                document.querySelector(`.instance-detail-wrap[data-instance-wrap="${idx}"]`).classList.add('show');
+            };
+            // 删除按钮
+            const closeBtn = item.querySelector('.close-btn');
+            closeBtn.onclick = function(e){
+                e.stopPropagation();
+                let idx = item.querySelector('span').textContent.replace('实例 ','');
+                // 删除对应详情
+                const wrap = document.querySelector(`.instance-detail-wrap[data-instance-wrap="${idx}"]`);
+                if(wrap) wrap.remove();
+                // 删除实例项
+                item.remove();
+                instanceCount--;
+                document.getElementById('addInstanceBtn').disabled = false;
+                document.getElementById('addInstanceBtn').style.opacity = '1';
+            };
+        });
+    }
+    bindInstanceItemEvent();
+
+    // 添加实例
+    document.getElementById('addInstanceBtn').addEventListener('click', function(){
+        if (instanceCount >= maxInstances) {
+            alert('最多只能添加5个数据实例');
+            return;
+        }
+        instanceCount++;
+        // 创建实例标签
+        const itemCard = document.createElement('div');
+        itemCard.className = 'instance-item-card';
+        itemCard.innerHTML = `
+            <span>实例 ${instanceCount}</span>
+            <button class="close-btn">×</button>
+        `;
+        instanceBar.appendChild(itemCard);
+        // 新增对应实例详情
+        detailContainer.insertAdjacentHTML('beforeend', getInstanceDetailTpl(instanceCount));
+        // 重新绑定事件
+        bindSubTabEvent();
+        bindInstanceItemEvent();
+
+        if (instanceCount >= maxInstances) {
+            this.disabled = true;
+            this.style.opacity = '0.5';
+        }
+    });
+
+    // 顶部导航、卡片跳转、返回逻辑
+    const navItems = document.querySelectorAll('.nav-item');
+    const panels = document.querySelectorAll('.content-panel');
+    const dataPanel = document.getElementById('data');
+    const detailPage = document.getElementById('detail-omol25');
+    const backBtn = document.getElementById('back-to-data');
+    const omol25Card = document.getElementById('card-omol25');
+
+    navItems.forEach(item => {
+        item.addEventListener('click', function() {
+            navItems.forEach(nav => nav.classList.remove('active'));
+            panels.forEach(panel => panel.classList.remove('show'));
+            detailPage.classList.remove('show');
+            this.classList.add('active');
+            const tabId = this.getAttribute('data-tab');
+            document.getElementById(tabId).classList.add('show');
+        });
+    });
+
+    omol25Card.addEventListener('click', function() {
+        dataPanel.classList.remove('show');
+        detailPage.classList.add('show');
+    });
+
+    backBtn.addEventListener('click', function() {
+        detailPage.classList.remove('show');
+        dataPanel.classList.add('show');
+    });
+</script>
+
+</body>
+</html>

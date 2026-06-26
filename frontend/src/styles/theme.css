@@ -1,0 +1,269 @@
+:root {
+  /* National research computing database design tokens */
+  --vs-blue-950: #07152f;
+  --vs-blue-900: #0b1f44;
+  --vs-blue-800: #123365;
+  --vs-blue-700: #19509a;
+  --vs-blue-600: #2568d8;
+  --vs-blue-500: #2f6fed;
+  --vs-blue-300: #8fb9ff;
+  --vs-blue-100: #e8f1ff;
+  --vs-cyan-700: #047a8a;
+  --vs-cyan-600: #0892a5;
+  --vs-cyan-500: #16b5c8;
+  --vs-cyan-100: #e5fbff;
+  --vs-purple-600: #6d5bd7;
+  --vs-purple-100: #f0edff;
+  --vs-slate-950: #111827;
+  --vs-slate-700: #344054;
+  --vs-slate-500: #667085;
+  --vs-slate-300: #cbd5e1;
+  --vs-slate-100: #f2f6fb;
+  --vs-white: #ffffff;
+
+  --vs-primary: #2f6fed;
+  --vs-primary-hover: #4b82f4;
+  --vs-page: #f7f9fc;
+  --vs-page-grad-a: #fbfdff;
+  --vs-card: #ffffff;
+  --vs-card-soft: #f5f8fd;
+  --vs-card-elevated: #ffffff;
+  --vs-border: #e3eaf3;
+  --vs-border-strong: #c5d7f2;
+  --vs-text: #25313b;
+  --vs-text-secondary: #52636f;
+  --vs-text-tertiary: #82919a;
+  --vs-radius-sm: 4px;
+  --vs-radius-md: 8px;
+  --vs-radius-lg: 12px;
+  --vs-space-1: 4px;
+  --vs-space-2: 8px;
+  --vs-space-3: 12px;
+  --vs-space-4: 16px;
+  --vs-space-5: 20px;
+  --vs-space-6: 24px;
+  --vs-space-8: 32px;
+  --vs-space-10: 40px;
+  --vs-space-12: 48px;
+  --vs-space-16: 64px;
+  --vs-font-sans: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --vs-font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --vs-type-xs: 12px;
+  --vs-type-sm: 13px;
+  --vs-type-md: 15px;
+  --vs-type-lg: 18px;
+  --vs-type-xl: 24px;
+  --vs-type-2xl: 32px;
+  --vs-type-hero: 48px;
+  --vs-leading-tight: 1.18;
+  --vs-leading-normal: 1.55;
+  --vs-leading-relaxed: 1.72;
+  --vs-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --vs-shadow-sm: 0 6px 16px rgba(15, 42, 82, 0.06);
+  --vs-shadow-md: 0 14px 34px rgba(15, 42, 82, 0.08);
+  --vs-shadow-lg: 0 24px 56px rgba(15, 42, 82, 0.11);
+  --vs-shadow-glow-blue: 0 0 0 1px rgba(47, 111, 237, 0.08), 0 16px 42px rgba(47, 111, 237, 0.12);
+  --vs-glass-bg: color-mix(in srgb, var(--vs-card) 88%, transparent);
+  --vs-glass-border: color-mix(in srgb, var(--vs-border) 78%, transparent);
+  --vs-glass-blur: 14px;
+  --vs-hero-perspective: 900px;
+  --vs-hero-depth: 44px;
+  --vs-chart-axis: var(--vs-text-tertiary);
+  --vs-chart-grid: var(--vs-border);
+  --vs-chart-series-blue: var(--vs-blue-500);
+  --vs-chart-series-cyan: var(--vs-cyan-500);
+  --vs-chart-series-purple: var(--vs-purple-600);
+  --vs-focus: 0 0 0 3px rgba(47, 111, 237, 0.14);
+  --vs-type-display: clamp(38px, 4.2vw, 58px);
+  --vs-tracking-tight: -0.018em;
+  --vs-tracking-eyebrow: 0.14em;
+  --vs-glow-cyan: 0 0 0 1px rgba(8, 146, 165, 0.08), 0 16px 42px rgba(8, 146, 165, 0.12);
+  --vs-hero-grad:
+    radial-gradient(circle at 16% 14%, color-mix(in srgb, var(--vs-cyan-100) 62%, transparent), transparent 44%),
+    radial-gradient(circle at 86% 8%, color-mix(in srgb, var(--vs-blue-100) 72%, transparent), transparent 42%),
+    linear-gradient(135deg, color-mix(in srgb, var(--vs-white) 97%, var(--vs-blue-100)), var(--vs-card) 60%, color-mix(in srgb, var(--vs-cyan-100) 30%, var(--vs-card)));
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --vs-glass-bg: color-mix(in srgb, var(--vs-card) 82%, transparent);
+  --vs-glass-border: color-mix(in srgb, var(--vs-border) 72%, transparent);
+  --vs-chart-axis: var(--vs-text-tertiary);
+  --vs-chart-grid: var(--vs-border);
+  --vs-primary: #7fb1ff;
+  --vs-primary-hover: #9bc2ff;
+  --vs-page: #141923;
+  --vs-page-grad-a: #192132;
+  --vs-card: #1f2633;
+  --vs-card-soft: #252e3d;
+  --vs-card-elevated: #273246;
+  --vs-border: #39465b;
+  --vs-border-strong: #536784;
+  --vs-text: #eef3f4;
+  --vs-text-secondary: #c3cfd2;
+  --vs-text-tertiary: #8d9ca1;
+  --vs-focus: 0 0 0 3px rgba(127, 177, 255, 0.2);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--vs-page);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: none;
+  box-shadow: var(--vs-focus);
+}
+
+.page {
+  background:
+    linear-gradient(180deg, var(--vs-page-grad-a) 0, var(--vs-page) 260px),
+    var(--vs-page);
+  color: var(--vs-text);
+  font-family: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+h1,
+h2,
+h3 {
+  color: var(--vs-text);
+  letter-spacing: var(--vs-tracking-tight, -0.01em);
+  text-wrap: balance;
+}
+
+.dashboard-kpis strong,
+.kpi-card strong,
+.stats strong,
+.metrics strong,
+.hero-metrics strong,
+.field-grid strong,
+.property-grid strong,
+.workflow-metrics strong,
+td strong {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.eyebrow,
+.metrics strong,
+.hero-metrics strong {
+  color: var(--vs-primary);
+}
+
+.breadcrumb,
+.muted,
+.records-head p,
+.section-head p,
+.card-top p,
+.intro,
+td span,
+.hero-copy,
+.dataset-head p:not(.eyebrow),
+.record-head p:not(.eyebrow) {
+  color: var(--vs-text-secondary);
+}
+
+.hero,
+.dataset-head,
+.record-head,
+.toolbar,
+.records,
+.main-panel,
+.side-panel,
+.stats,
+.state,
+.dataset-card,
+.hero-metrics div {
+  border-color: var(--vs-border);
+  background: var(--vs-card);
+  color: var(--vs-text);
+}
+
+.stats div,
+.metrics div,
+.field-grid div,
+.property-grid div,
+.legend,
+.empty-structure,
+th,
+.dataset-card-action {
+  border-color: var(--vs-border);
+  background: var(--vs-card-soft);
+}
+
+.stats span,
+.metrics span,
+.field-grid span,
+.property-grid span,
+.legend span,
+.home-search-card span,
+.home-capability span,
+.dataset-card-action span {
+  color: var(--vs-text-tertiary);
+}
+
+.stats strong,
+.field-grid strong,
+.property-grid strong,
+.legend strong,
+td,
+td strong,
+.home-search-card strong,
+.home-capability strong {
+  color: var(--vs-text);
+}
+
+.pill,
+.clear,
+.pager button,
+.back,
+.download,
+.tabs button {
+  border-color: var(--vs-border-strong);
+  background: color-mix(in srgb, var(--vs-primary) 13%, var(--vs-card));
+  color: var(--vs-primary);
+}
+
+.tabs button.active {
+  border-color: var(--vs-primary);
+  background: var(--vs-primary);
+  color: #fff;
+}
+
+input {
+  border-color: var(--vs-border-strong);
+  background: var(--vs-card-elevated);
+  color: var(--vs-text);
+}
+
+input:focus {
+  border-color: var(--vs-primary);
+  box-shadow: var(--vs-focus);
+}
+
+.records-head,
+.tabs,
+th,
+td {
+  border-color: var(--vs-border);
+}
+
+tbody tr:hover {
+  background: color-mix(in srgb, var(--vs-primary) 10%, var(--vs-card));
+}
+
+:root[data-theme="dark"] .molecule-viewer {
+  background: radial-gradient(circle at 50% 40%, #2f4057, #1f2633 70%, #141923);
+}
