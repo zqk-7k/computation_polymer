@@ -332,10 +332,20 @@ public class DatasetIntakeService {
         profile.put("archiveEntries", capList(resolved.files(), 40));
       }
       if (!resolved.usable()) {
-        throw new ApiException(HttpStatus.BAD_REQUEST, resolved.warning());
+        profile.put("localSaved", false);
+        profile.put("localSaveError", resolved.warning());
+        profile.put("status", "unsupported");
+        profile.put("format", resolved.sourceKind());
+        profile.put("detectedFields", "metadata only");
+        profile.put("summary", resolved.warning());
+        String stage = submission.pipelineStage() == null || submission.pipelineStage().isBlank()
+            ? "ADAPTER_REQUIRED"
+            : submission.pipelineStage();
+        return applyProfile(id, stage, "源文件本地保存未执行：" + resolved.warning(), toJson(profile));
       }
       LocalDownloadResult saved = downloadSourceToLocal(id, resolved.url());
       profile.put("localSaved", true);
+      profile.remove("localSaveError");
       profile.put("localPath", saved.path());
       profile.put("localFileName", saved.fileName());
       profile.put("localSizeBytes", saved.sizeBytes());
