@@ -44,6 +44,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import org.apache.commons.compress.archivers.ArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream;
+import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
+import org.apache.commons.compress.compressors.xz.XZCompressorInputStream;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -471,17 +476,21 @@ public class DatasetIntakeService {
     if (name.contains("poscar") || name.contains("contcar")) return "POSCAR";
     if (name.endsWith(".extxyz")) return "EXTXYZ";
     if (name.endsWith(".xyz")) return "XYZ";
+    if (name.endsWith(".jsonl") || name.endsWith(".ndjson")) return "JSONL";
     if (name.endsWith(".json") || ct.contains("application/json")) return "JSON";
+    if (name.endsWith(".tsv")) return "TSV";
     if (!looksLikeText(b)) return "BINARY";
     if (name.endsWith(".csv") || ct.contains("text/csv")) return "CSV";
     String headText = new String(b, 0, Math.min(b.length, 512), StandardCharsets.UTF_8).trim();
-    if (headText.startsWith("{") || headText.startsWith("[")) return "JSON";
     String[] headLines = headText.split("\\r?\\n");
     if (headLines.length > 0) {
       String first = headLines[0].trim();
       if (first.matches("\\d+")) return "XYZ";
-      if (headLines.length > 1 && (first.contains(",") || first.contains("\t") || first.contains(";"))) return "CSV";
+      if (headLines.length > 1 && first.contains("\t")) return "TSV";
+      if (headLines.length > 1 && (first.contains(",") || first.contains(";"))) return "CSV";
+      if (headLines.length > 1 && first.startsWith("{") && headLines[1].trim().startsWith("{")) return "JSONL";
     }
+    if (headText.startsWith("{") || headText.startsWith("[")) return "JSON";
     return "UNKNOWN";
   }
 
@@ -524,13 +533,15 @@ public class DatasetIntakeService {
     try {
       switch (format) {
         case "JSON" -> parseJson(profile, sample);
-        case "CSV" -> parseCsv(profile, sample);
+        case "JSONL" -> parseJsonl(profile, sample);
+        case "CSV", "TSV" -> parseDelimited(profile, format, sample);
         case "XYZ", "EXTXYZ" -> parseXyz(profile, sample);
         case "CIF" -> parseCif(profile, sample);
         case "POSCAR" -> parsePoscar(profile, sample);
         case "HDF5" -> parseHdf5(profile, sample);
         case "ZIP" -> parseZip(profile, sample);
-        case "GZIP", "XZ", "BZIP2", "ZSTD", "TAR", "BINARY" -> parseCompressedOrBinary(profile, format, sample);
+        case "TAR" -> parseTar(profile, sample, "TAR");
+        case "GZIP", "XZ", "BZIP2", "ZSTD", "BINARY" -> parseCompressedOrBinary(profile, format, sample);
         default -> {
           profile.put("status", "unsupported");
           profile.put("summary", "暂不支持自动解析该格式，需人工配置适配器。");
@@ -571,7 +582,30 @@ public class DatasetIntakeService {
     profile.put("detectedFields", mapToScientificFields(String.join(" ", fields)));
   }
 
-  private void parseCsv(Map<String, Object> profile, DownloadSample sample) {
+  private void parseJsonl(Map<String, Object> profile, DownloadSample sample) throws Exception {
+    String[] lines = new String(sample.bytes(), StandardCharsets.UTF_8).split("\\r?\\n");
+    List<String> fields = new ArrayList<>();
+    long records = 0;
+    for (String line : lines) {
+      if (line.isBlank()) {
+        continue;
+      }
+      records += 1;
+      if (fields.isEmpty()) {
+        JsonNode node = objectMapper.readTree(line);
+        if (node.isObject()) {
+          node.fieldNames().forEachRemaining(fields::add);
+        }
+      }
+    }
+    profile.put("status", "parsed");
+    profile.put("fields", capList(fields, 40));
+    profile.put("recordEstimate", sample.truncated() ? "≥ " + records + "（样本截断）" : String.valueOf(records));
+    profile.put("summary", "JSONL/NDJSON 字段 " + fields.size() + " 个，记录约 " + records);
+    profile.put("detectedFields", mapToScientificFields(String.join(" ", fields)));
+  }
+
+  private void parseDelimited(Map<String, Object> profile, String format, DownloadSample sample) {
     String text = new String(sample.bytes(), StandardCharsets.UTF_8);
     String[] lines = text.split("\\r?\\n");
     int dataLines = 0;
@@ -582,11 +616,11 @@ public class DatasetIntakeService {
     if (!isPlausibleCsvHeader(header)) {
       profile.put("status", "unsupported");
       profile.put("fields", List.of());
-      profile.put("summary", "样本不像有效 CSV 文本，可能是压缩包或二进制文件；已停止按 CSV 解析，避免乱码字段。");
+      profile.put("summary", "样本不像有效 " + format + " 文本，可能是压缩包或二进制文件；已停止按表格解析，避免乱码字段。");
       profile.put("detectedFields", "metadata only");
       return;
     }
-    String delimiter = header.contains("\t") ? "\t" : (header.contains(";") ? ";" : ",");
+    String delimiter = "TSV".equals(format) ? "\t" : (header.contains("\t") ? "\t" : (header.contains(";") ? ";" : ","));
     List<String> columns = new ArrayList<>();
     for (String col : header.split(java.util.regex.Pattern.quote(delimiter))) {
       String c = col.trim().replaceAll("^\"|\"$", "");
@@ -596,7 +630,7 @@ public class DatasetIntakeService {
     profile.put("status", "parsed");
     profile.put("fields", capList(columns, 40));
     profile.put("recordEstimate", sample.truncated() ? "≥ " + rows + "（样本截断）" : String.valueOf(rows));
-    profile.put("summary", "CSV 列 " + columns.size() + " 个，数据行约 " + rows);
+    profile.put("summary", format + " 列 " + columns.size() + " 个，数据行约 " + rows);
     profile.put("detectedFields", mapToScientificFields(String.join(" ", columns)));
   }
 
@@ -608,7 +642,36 @@ public class DatasetIntakeService {
       profile.put("summary", "检测到二进制样本，当前不会按 CSV/文本解析。请确认原始格式，或先解包后按内部文件接入。");
       return;
     }
-    profile.put("summary", format + " 压缩/归档文件已识别。当前预检只完成外层格式判断，需先解压，再按内部 CIF/XYZ/HDF5/JSON/CSV 文件解析。");
+    if ("ZSTD".equals(format)) {
+      profile.put("summary", "ZSTD 压缩文件已识别；当前运行环境只做外层识别，需安装 Zstandard 解压适配器后解析内部文件。");
+      return;
+    }
+    try {
+      InnerBytes decompressed = decompressSample(format, sample);
+      String innerName = stripCompressionExtension(sample.fileName());
+      DownloadSample inner = new DownloadSample(
+          decompressed.bytes(),
+          decompressed.bytes().length,
+          sample.truncated() || decompressed.truncated(),
+          innerName,
+          "");
+      String innerFormat = detectSampleFormat(inner);
+      profile.put("containerFormat", format);
+      profile.put("innerFile", innerName);
+      profile.put("innerFormat", innerFormat);
+      profile.put("innerSampleBytes", inner.bytes().length);
+      if ("TAR".equals(innerFormat) || innerName.toLowerCase(Locale.ROOT).endsWith(".tar")) {
+        parseTar(profile, inner, format);
+      } else {
+        parseSample(profile, innerFormat, inner);
+        Object innerSummary = profile.getOrDefault("summary", "已完成内部样本解析");
+        profile.put("summary", format + " 解压后识别为 " + innerFormat + "；" + innerSummary);
+      }
+    } catch (Exception ex) {
+      profile.put("summary", format + " 压缩文件已识别，但样本解压失败："
+          + (ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage())
+          + "。若远程文件很大，当前 Range 样本可能不足以完整解压。");
+    }
   }
 
   private void parseXyz(Map<String, Object> profile, DownloadSample sample) {
@@ -713,8 +776,41 @@ public class DatasetIntakeService {
   }
 
   private void parseZip(Map<String, Object> profile, DownloadSample sample) throws Exception {
+    List<String> entries = listZipEntries(sample.bytes());
+    profile.put("archiveEntries", capList(entries, 40));
+    profile.put("entryCount", entries.size());
+    String selected = bestArchiveEntry(entries);
+    if (selected != null) {
+      InnerBytes selectedBytes = readZipEntry(sample.bytes(), selected);
+      parseArchiveEntry(profile, "ZIP", sample, selected, selectedBytes);
+      return;
+    }
+    profile.put("status", entries.isEmpty() ? "partial" : "parsed");
+    profile.put("fields", capList(entries, 40));
+    profile.put("summary", "ZIP 内文件 " + entries.size() + " 个；未找到可直接预检的 CIF/XYZ/HDF5/JSON/JSONL/CSV/TSV 等文件。");
+    profile.put("detectedFields", mapToScientificFields(String.join(" ", entries)));
+  }
+
+  private void parseTar(Map<String, Object> profile, DownloadSample sample, String containerFormat) throws Exception {
+    List<String> entries = listTarEntries(sample.bytes());
+    profile.put("containerFormat", containerFormat);
+    profile.put("archiveEntries", capList(entries, 40));
+    profile.put("entryCount", entries.size());
+    String selected = bestArchiveEntry(entries);
+    if (selected != null) {
+      InnerBytes selectedBytes = readTarEntry(sample.bytes(), selected);
+      parseArchiveEntry(profile, containerFormat.equals("TAR") ? "TAR" : containerFormat + " -> TAR", sample, selected, selectedBytes);
+      return;
+    }
+    profile.put("status", entries.isEmpty() ? "partial" : "parsed");
+    profile.put("fields", capList(entries, 40));
+    profile.put("summary", containerFormat + " 归档内文件 " + entries.size() + " 个；未找到可直接预检的结构或表格文件。");
+    profile.put("detectedFields", mapToScientificFields(String.join(" ", entries)));
+  }
+
+  private List<String> listZipEntries(byte[] bytes) throws Exception {
     List<String> entries = new ArrayList<>();
-    try (ZipInputStream zip = new ZipInputStream(new java.io.ByteArrayInputStream(sample.bytes()))) {
+    try (ZipInputStream zip = new ZipInputStream(new java.io.ByteArrayInputStream(bytes))) {
       ZipEntry entry;
       while ((entry = zip.getNextEntry()) != null && entries.size() < 60) {
         if (!entry.isDirectory()) {
@@ -722,11 +818,149 @@ public class DatasetIntakeService {
         }
       }
     }
-    profile.put("status", entries.isEmpty() ? "partial" : "parsed");
-    profile.put("fields", capList(entries, 40));
-    profile.put("entryCount", entries.size());
-    profile.put("summary", "压缩包内文件 " + entries.size() + " 个，需解压后按内部格式分派解析");
-    profile.put("detectedFields", mapToScientificFields(String.join(" ", entries)));
+    return entries;
+  }
+
+  private List<String> listTarEntries(byte[] bytes) throws Exception {
+    List<String> entries = new ArrayList<>();
+    try (TarArchiveInputStream tar = new TarArchiveInputStream(new java.io.ByteArrayInputStream(bytes))) {
+      ArchiveEntry entry;
+      while ((entry = tar.getNextEntry()) != null && entries.size() < 60) {
+        if (!entry.isDirectory()) {
+          entries.add(entry.getName());
+        }
+      }
+    }
+    return entries;
+  }
+
+  private InnerBytes readZipEntry(byte[] bytes, String entryName) throws Exception {
+    try (ZipInputStream zip = new ZipInputStream(new java.io.ByteArrayInputStream(bytes))) {
+      ZipEntry entry;
+      while ((entry = zip.getNextEntry()) != null) {
+        if (!entry.isDirectory() && entryName.equals(entry.getName())) {
+          return readLimited(zip, archiveInnerByteLimit());
+        }
+      }
+    }
+    return new InnerBytes(new byte[0], false);
+  }
+
+  private InnerBytes readTarEntry(byte[] bytes, String entryName) throws Exception {
+    try (TarArchiveInputStream tar = new TarArchiveInputStream(new java.io.ByteArrayInputStream(bytes))) {
+      ArchiveEntry entry;
+      while ((entry = tar.getNextEntry()) != null) {
+        if (!entry.isDirectory() && entryName.equals(entry.getName())) {
+          return readLimited(tar, archiveInnerByteLimit());
+        }
+      }
+    }
+    return new InnerBytes(new byte[0], false);
+  }
+
+  private void parseArchiveEntry(
+      Map<String, Object> profile,
+      String containerFormat,
+      DownloadSample outerSample,
+      String entryName,
+      InnerBytes selectedBytes
+  ) {
+    if (selectedBytes.bytes().length == 0) {
+      profile.put("status", "partial");
+      profile.put("summary", containerFormat + " 内部文件 " + entryName + " 为空或无法读取。");
+      profile.put("detectedFields", "metadata only");
+      return;
+    }
+    DownloadSample inner = new DownloadSample(
+        selectedBytes.bytes(),
+        selectedBytes.bytes().length,
+        outerSample.truncated() || selectedBytes.truncated(),
+        entryName,
+        "");
+    String innerFormat = detectSampleFormat(inner);
+    profile.put("containerFormat", containerFormat);
+    profile.put("selectedEntry", entryName);
+    profile.put("innerFormat", innerFormat);
+    profile.put("innerSampleBytes", inner.bytes().length);
+    profile.put("innerSampleTruncated", inner.truncated());
+    parseSample(profile, innerFormat, inner);
+    Object innerSummary = profile.getOrDefault("summary", "已完成内部样本解析");
+    profile.put("summary", containerFormat + " 内部文件 " + entryName + " 识别为 " + innerFormat + "；" + innerSummary);
+  }
+
+  private InnerBytes decompressSample(String format, DownloadSample sample) throws Exception {
+    java.io.InputStream raw = new java.io.ByteArrayInputStream(sample.bytes());
+    java.io.InputStream in = switch (format) {
+      case "GZIP" -> new GzipCompressorInputStream(raw);
+      case "XZ" -> new XZCompressorInputStream(raw);
+      case "BZIP2" -> new BZip2CompressorInputStream(raw);
+      default -> raw;
+    };
+    try (java.io.InputStream autoClose = in) {
+      return readLimited(autoClose, archiveInnerByteLimit());
+    }
+  }
+
+  private int archiveInnerByteLimit() {
+    return Math.max(1, properties.getDiscovery().getAutoAdapt().getSampleMb()) * 1024 * 1024;
+  }
+
+  private static InnerBytes readLimited(java.io.InputStream in, int maxBytes) throws Exception {
+    try (java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream()) {
+      byte[] chunk = new byte[64 * 1024];
+      int total = 0;
+      int read;
+      boolean truncated = false;
+      while ((read = in.read(chunk)) != -1) {
+        if (total + read > maxBytes) {
+          buffer.write(chunk, 0, maxBytes - total);
+          truncated = true;
+          break;
+        }
+        buffer.write(chunk, 0, read);
+        total += read;
+      }
+      return new InnerBytes(buffer.toByteArray(), truncated);
+    }
+  }
+
+  private static String bestArchiveEntry(List<String> entries) {
+    String best = null;
+    int bestScore = 0;
+    for (String entry : entries) {
+      int score = archiveEntryScore(entry);
+      if (score > bestScore) {
+        best = entry;
+        bestScore = score;
+      }
+    }
+    return best;
+  }
+
+  private static int archiveEntryScore(String entry) {
+    String name = entry == null ? "" : entry.toLowerCase(Locale.ROOT);
+    if (name.endsWith("/") || name.contains("__macosx/")) return 0;
+    if (name.endsWith(".h5") || name.endsWith(".hdf5")) return 100;
+    if (name.endsWith(".cif") || name.endsWith(".extxyz") || name.endsWith(".xyz")) return 95;
+    if (name.endsWith("poscar") || name.endsWith("contcar") || name.contains("/poscar") || name.contains("/contcar")) return 92;
+    if (name.endsWith(".json") || name.endsWith(".jsonl") || name.endsWith(".ndjson")) return 88;
+    if (name.endsWith(".csv") || name.endsWith(".tsv")) return 84;
+    if (name.endsWith(".tar") || name.endsWith(".zip") || name.endsWith(".gz")
+        || name.endsWith(".xz") || name.endsWith(".bz2") || name.endsWith(".tgz")
+        || name.endsWith(".txz")) return 70;
+    if (name.contains("readme") || name.contains("license")) return 10;
+    return 0;
+  }
+
+  private static String stripCompressionExtension(String fileName) {
+    String name = fileName == null || fileName.isBlank() ? "decompressed" : fileName;
+    String lower = name.toLowerCase(Locale.ROOT);
+    for (String suffix : List.of(".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz2", ".gz", ".xz", ".bz2")) {
+      if (lower.endsWith(suffix)) {
+        return name.substring(0, name.length() - suffix.length()) + (suffix.startsWith(".tar") || suffix.equals(".tgz") || suffix.equals(".txz") || suffix.equals(".tbz2") ? ".tar" : "");
+      }
+    }
+    return name + ".decompressed";
   }
 
   private static List<String> capList(List<String> values, int max) {
@@ -784,6 +1018,9 @@ public class DatasetIntakeService {
   private record DownloadSample(byte[] bytes, long totalSize, boolean truncated, String fileName, String contentType) {
   }
 
+  private record InnerBytes(byte[] bytes, boolean truncated) {
+  }
+
   @FunctionalInterface
   private interface DatasetPredicate {
     boolean test(String name, Dataset dataset);
@@ -825,7 +1062,7 @@ public class DatasetIntakeService {
     } catch (Exception ignored) {
       // No usable parse profile; the suggestion is simply empty.
     }
-    boolean tabular = "JSON".equals(format) || "CSV".equals(format);
+    boolean tabular = isTabularFormat(format);
     boolean structure = isStructureFormat(format);
     boolean supported = tabular || structure;
     Map<String, String> suggested = tabular ? suggestMapping(fields) : Map.of();
@@ -837,7 +1074,7 @@ public class DatasetIntakeService {
       note = "已按字段名建议映射，可编辑后确认入库；将写入展示库数据集 " + datasetKey + "（前若干条，需人工确认）。";
     } else {
       note = "当前解析格式为 " + (format.isBlank() ? "未知" : format)
-          + "，支持 CSV/JSON 表格与 XYZ/EXTXYZ/CIF/POSCAR/HDF5 结构来源直接入库；其它格式需人工适配器。";
+          + "，支持 CSV/TSV/JSON/JSONL 表格与 XYZ/EXTXYZ/CIF/POSCAR/HDF5 结构来源直接入库；其它格式需人工适配器。";
     }
     return new IngestSuggestionResponse(datasetKey, datasetName, supported, format, fields, suggested, note);
   }
@@ -864,7 +1101,7 @@ public class DatasetIntakeService {
       if (isStructureFormat(format)) {
         rows = extractStructureRecords(format, sample, limit, datasetKey, datasetName);
         modeNote = "结构适配器（" + format + "）解析坐标/元素/化学式";
-      } else if ("JSON".equals(format) || "CSV".equals(format)) {
+      } else if (isTabularFormat(format)) {
         Map<String, String> mapping = request == null || request.mapping() == null ? Map.of() : request.mapping();
         if (mapping.isEmpty()) {
           throw new ApiException(HttpStatus.BAD_REQUEST, "请先确认字段映射");
@@ -873,7 +1110,7 @@ public class DatasetIntakeService {
         modeNote = "表格来源（" + format + "）按确认的字段映射";
       } else {
         throw new ApiException(HttpStatus.BAD_REQUEST,
-            "仅支持 CSV/JSON 表格或 XYZ/EXTXYZ/CIF/POSCAR/HDF5 结构来源入库，当前为 " + format);
+            "仅支持 CSV/TSV/JSON/JSONL 表格或 XYZ/EXTXYZ/CIF/POSCAR/HDF5 结构来源入库，当前为 " + format);
       }
     } catch (ApiException ex) {
       throw ex;
@@ -973,11 +1210,25 @@ public class DatasetIntakeService {
       } else if (root.isObject()) {
         records.add(jsonObjectToRow(root));
       }
-    } else if ("CSV".equals(format)) {
+    } else if ("JSONL".equals(format)) {
+      String[] lines = new String(sample.bytes(), StandardCharsets.UTF_8).split("\\r?\\n");
+      for (String line : lines) {
+        if (records.size() >= limit) {
+          break;
+        }
+        if (line.isBlank()) {
+          continue;
+        }
+        JsonNode node = objectMapper.readTree(line);
+        if (node.isObject()) {
+          records.add(jsonObjectToRow(node));
+        }
+      }
+    } else if ("CSV".equals(format) || "TSV".equals(format)) {
       String[] lines = new String(sample.bytes(), StandardCharsets.UTF_8).split("\\r?\\n");
       if (lines.length >= 2) {
         String header = lines[0];
-        String delimiter = header.contains("\t") ? "\t" : (header.contains(";") ? ";" : ",");
+        String delimiter = "TSV".equals(format) ? "\t" : (header.contains("\t") ? "\t" : (header.contains(";") ? ";" : ","));
         List<String> columns = new ArrayList<>();
         for (String col : header.split(java.util.regex.Pattern.quote(delimiter))) {
           columns.add(col.trim().replaceAll("^\"|\"$", ""));
@@ -1010,6 +1261,10 @@ public class DatasetIntakeService {
   private static boolean isStructureFormat(String format) {
     return "XYZ".equals(format) || "EXTXYZ".equals(format) || "CIF".equals(format)
         || "POSCAR".equals(format) || "HDF5".equals(format);
+  }
+
+  private static boolean isTabularFormat(String format) {
+    return "JSON".equals(format) || "JSONL".equals(format) || "CSV".equals(format) || "TSV".equals(format);
   }
 
   private List<Map<String, String>> mapTabularRecords(

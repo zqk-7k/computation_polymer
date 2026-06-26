@@ -66,7 +66,7 @@ const pipelineSteps = [
 const adaptSteps = [
   { key: 'guard', label: '安全校验', pct: 15, detail: '校验下载链接是否为安全的公开 HTTP/HTTPS 地址。' },
   { key: 'download', label: '读取样本', pct: 38, detail: '从远程链接读取样本；大文件只抽取前若干 MB。' },
-  { key: 'detect', label: '识别格式', pct: 62, detail: '识别 CSV、JSON、HDF5、XYZ、CIF、POSCAR 或压缩归档格式。' },
+  { key: 'detect', label: '识别格式', pct: 62, detail: '识别 CSV/TSV、JSON/JSONL、HDF5、XYZ、CIF、POSCAR 或压缩归档格式。' },
   { key: 'parse', label: '解析预检', pct: 84, detail: '提取字段、结构、记录估计和科学属性线索。' },
   { key: 'save', label: '写入结果', pct: 100, detail: '保存预检报告并刷新接入任务。' }
 ]
@@ -96,7 +96,7 @@ const intakeQueueStats = computed(() => {
 const adminPipelineGuide = [
   { title: '1. 核验来源', text: '确认 DOI、论文页、数据下载页、许可证和重复数据风险。' },
   { title: '2. 批准进入队列', text: '批准后数据只进入接入队列，不会自动发布到数据中心。' },
-  { title: '3. 开发解析适配器', text: '根据 HDF5、CIF、XYZ、JSON、LMDB 等格式编写字段映射和抽样校验。' },
+  { title: '3. 开发解析适配器', text: '根据 HDF5、CIF、XYZ、JSON/JSONL、CSV/TSV、压缩包、LMDB 等格式编写字段映射和抽样校验。' },
   { title: '4. 重建展示库', text: '运行构建脚本写入 H2 展示库，再执行质量验证和发布门控。' }
 ]
 
@@ -317,6 +317,26 @@ function parsedProfile(submission) {
     return JSON.parse(submission.parseProfile)
   } catch {
     return null
+  }
+}
+
+function inferDoi(submission) {
+  const text = [submission?.paperUrl, submission?.dataUrl, submission?.description]
+    .filter(Boolean)
+    .join(' ')
+  const match = text.match(/10\.\d{4,9}\/[-._;()/:A-Z0-9]+/i)
+  return match ? match[0].replace(/[.,;，。；]+$/, '') : ''
+}
+
+function shortUrl(url) {
+  if (!url) return '未提供'
+  try {
+    const parsed = new URL(url)
+    const path = parsed.pathname.replace(/\/$/, '')
+    const shortPath = path.length > 34 ? `${path.slice(0, 18)}...${path.slice(-12)}` : path
+    return `${parsed.hostname}${shortPath}`
+  } catch {
+    return url.length > 46 ? `${url.slice(0, 28)}...${url.slice(-12)}` : url
   }
 }
 
@@ -952,6 +972,34 @@ function formatDate(value) {
               <a v-if="submission.dataUrl" :href="submission.dataUrl" target="_blank" rel="noopener noreferrer">数据来源</a>
               <span>{{ formatDate(submission.updatedAt) }}</span>
             </div>
+            <div class="task-source-meta">
+              <div>
+                <span>DOI</span>
+                <strong>{{ inferDoi(submission) || '未识别 / 未提供' }}</strong>
+              </div>
+              <div>
+                <span>论文链接</span>
+                <a v-if="submission.paperUrl" :href="submission.paperUrl" target="_blank" rel="noopener noreferrer">{{ shortUrl(submission.paperUrl) }}</a>
+                <strong v-else>未提供</strong>
+              </div>
+              <div>
+                <span>数据下载/入口链接</span>
+                <a v-if="submission.dataUrl" :href="submission.dataUrl" target="_blank" rel="noopener noreferrer">{{ shortUrl(submission.dataUrl) }}</a>
+                <strong v-else>未提供</strong>
+              </div>
+              <div>
+                <span>许可证</span>
+                <strong>{{ submission.license || '未提供' }}</strong>
+              </div>
+              <div>
+                <span>声明格式</span>
+                <strong>{{ submission.dataFormat || '未填写' }}</strong>
+              </div>
+              <div>
+                <span>提供字段</span>
+                <strong>{{ submission.providedFields || '未填写' }}</strong>
+              </div>
+            </div>
             <div class="stage">
               <strong>{{ stageLabel(submission.pipelineStage) }}</strong>
               <p>{{ submission.pipelineMessage }}</p>
@@ -1015,6 +1063,15 @@ function formatDate(value) {
                 </template>
                 <span>格式</span><em>{{ parsedProfile(submission).format || '-' }}</em>
                 <span>状态</span><em>{{ parsedProfile(submission).status || '-' }}</em>
+                <template v-if="parsedProfile(submission).containerFormat">
+                  <span>外层容器</span><em>{{ parsedProfile(submission).containerFormat }}</em>
+                </template>
+                <template v-if="parsedProfile(submission).selectedEntry || parsedProfile(submission).innerFile">
+                  <span>内部文件</span><em>{{ parsedProfile(submission).selectedEntry || parsedProfile(submission).innerFile }}</em>
+                </template>
+                <template v-if="parsedProfile(submission).innerFormat">
+                  <span>内部格式</span><em>{{ parsedProfile(submission).innerFormat }}</em>
+                </template>
                 <template v-if="parsedProfile(submission).sizeBytes">
                   <span>远程大小</span><em>{{ formatBytes(parsedProfile(submission).sizeBytes) }}</em>
                 </template>
@@ -1036,6 +1093,9 @@ function formatDate(value) {
               </div>
               <p v-if="parsedProfile(submission).summary" class="pp-summary">
                 {{ parsedProfile(submission).summary }}
+              </p>
+              <p v-if="parsedProfile(submission).archiveEntries && parsedProfile(submission).archiveEntries.length" class="pp-fields">
+                归档文件：{{ parsedProfile(submission).archiveEntries.join('、') }}
               </p>
               <p v-if="parsedProfile(submission).fields && parsedProfile(submission).fields.length" class="pp-fields">
                 字段/列：{{ parsedProfile(submission).fields.join('、') }}
@@ -1083,7 +1143,7 @@ function formatDate(value) {
                 >确认并写入展示库</button>
                 <button class="reject" type="button" :disabled="working" @click="ingestState[submission.id] = null">取消</button>
               </div>
-              <p v-if="!ingestState[submission.id].suggestion.supported" class="pp-warn">当前格式不支持直接入库（支持 CSV/JSON 表格与 XYZ/EXTXYZ/CIF/POSCAR/HDF5 结构）。</p>
+              <p v-if="!ingestState[submission.id].suggestion.supported" class="pp-warn">当前格式不支持直接入库（支持 CSV/TSV/JSON/JSONL 表格与 XYZ/EXTXYZ/CIF/POSCAR/HDF5 结构）。</p>
             </div>
             <div v-if="isSuperAdmin && submission.pipelineStage === 'PUBLISHED'" class="withdraw-row">
               <span>已入库展示库数据集 intake_{{ submission.id }}（可在数据中心查看 / 重新入库覆盖）。</span>
@@ -1936,6 +1996,47 @@ textarea {
   font-size: 12px;
 }
 
+.task-source-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.task-source-meta div {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--vs-border);
+  border-radius: var(--vs-radius-sm);
+  background: color-mix(in srgb, var(--vs-card) 82%, var(--vs-cyan-100));
+}
+
+.task-source-meta span,
+.task-source-meta strong,
+.task-source-meta a {
+  display: block;
+}
+
+.task-source-meta span {
+  color: var(--vs-text-tertiary);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.task-source-meta strong,
+.task-source-meta a {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  color: var(--vs-text);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.task-source-meta a {
+  color: var(--vs-primary);
+}
+
 .stage {
   padding: 11px;
   border: 1px solid var(--vs-border);
@@ -2458,6 +2559,7 @@ textarea {
   .config-grid,
   .queue-stats,
   .admin-guide,
+  .task-source-meta,
   .pipeline-flow {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2480,6 +2582,7 @@ textarea {
   .config-grid,
   .queue-stats,
   .admin-guide,
+  .task-source-meta,
   .task-progress,
   .pipeline-flow,
   .proposal-form {
