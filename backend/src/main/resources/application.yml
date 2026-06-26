@@ -1,6 +1,13 @@
 server:
   port: 8080
 
+spring:
+  web:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
+
 debug: false
 
 vasp:
