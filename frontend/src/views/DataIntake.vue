@@ -916,7 +916,7 @@ function formatDate(value) {
               type="button"
               :disabled="working"
               @click="adaptSubmission(submission)"
-            >自动下载并解析预检</button>
+            >{{ working ? '预检中...' : '自动下载并解析预检' }}</button>
             <div v-if="parsedProfile(submission)" class="parse-profile">
               <strong>自动解析预检结果</strong>
               <div class="pp-grid">
@@ -956,7 +956,7 @@ function formatDate(value) {
                 <input v-model="ingestState[submission.id].datasetName" maxlength="120" />
               </label>
               <label
-                v-if="!['XYZ','EXTXYZ','CIF','POSCAR'].includes(ingestState[submission.id].suggestion.format)"
+                v-if="!['XYZ','EXTXYZ','CIF','POSCAR','HDF5'].includes(ingestState[submission.id].suggestion.format)"
                 class="ingest-label"
               >
                 <span>字段映射（展示库列 → 来源字段，JSON）</span>
@@ -978,7 +978,7 @@ function formatDate(value) {
                 >确认并写入展示库</button>
                 <button class="reject" type="button" :disabled="working" @click="ingestState[submission.id] = null">取消</button>
               </div>
-              <p v-if="!ingestState[submission.id].suggestion.supported" class="pp-warn">当前格式不支持直接入库（支持 CSV/JSON 表格与 XYZ/EXTXYZ/CIF/POSCAR 结构）。</p>
+              <p v-if="!ingestState[submission.id].suggestion.supported" class="pp-warn">当前格式不支持直接入库（支持 CSV/JSON 表格与 XYZ/EXTXYZ/CIF/POSCAR/HDF5 结构）。</p>
             </div>
             <div v-if="isSuperAdmin && submission.pipelineStage === 'PUBLISHED'" class="withdraw-row">
               <span>已入库展示库数据集 intake_{{ submission.id }}（可在数据中心查看 / 重新入库覆盖）。</span>

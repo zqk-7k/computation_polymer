@@ -443,15 +443,36 @@ public class DatasetIntakeService {
     if (b.length >= 2 && (b[0] & 0xFF) == 0x1f && (b[1] & 0xFF) == 0x8b) {
       return "GZIP";
     }
+    if (b.length >= 6 && (b[0] & 0xFF) == 0xFD && b[1] == '7' && b[2] == 'z'
+        && b[3] == 'X' && b[4] == 'Z' && b[5] == 0x00) {
+      return "XZ";
+    }
+    if (b.length >= 3 && b[0] == 'B' && b[1] == 'Z' && b[2] == 'h') {
+      return "BZIP2";
+    }
+    if (b.length >= 4 && (b[0] & 0xFF) == 0x28 && (b[1] & 0xFF) == 0xB5
+        && (b[2] & 0xFF) == 0x2F && (b[3] & 0xFF) == 0xFD) {
+      return "ZSTD";
+    }
+    if (b.length >= 265 && b[257] == 'u' && b[258] == 's' && b[259] == 't'
+        && b[260] == 'a' && b[261] == 'r') {
+      return "TAR";
+    }
     String name = sample.fileName().toLowerCase(Locale.ROOT);
     String ct = sample.contentType().toLowerCase(Locale.ROOT);
     if (name.endsWith(".h5") || name.endsWith(".hdf5")) return "HDF5";
     if (name.endsWith(".zip")) return "ZIP";
+    if (name.endsWith(".tar.gz") || name.endsWith(".tgz") || name.endsWith(".gz")) return "GZIP";
+    if (name.endsWith(".tar.xz") || name.endsWith(".txz") || name.endsWith(".xz")) return "XZ";
+    if (name.endsWith(".tar.bz2") || name.endsWith(".tbz2") || name.endsWith(".bz2")) return "BZIP2";
+    if (name.endsWith(".tar.zst") || name.endsWith(".tzst") || name.endsWith(".zst")) return "ZSTD";
+    if (name.endsWith(".tar")) return "TAR";
     if (name.endsWith(".cif")) return "CIF";
     if (name.contains("poscar") || name.contains("contcar")) return "POSCAR";
     if (name.endsWith(".extxyz")) return "EXTXYZ";
     if (name.endsWith(".xyz")) return "XYZ";
     if (name.endsWith(".json") || ct.contains("application/json")) return "JSON";
+    if (!looksLikeText(b)) return "BINARY";
     if (name.endsWith(".csv") || ct.contains("text/csv")) return "CSV";
     String headText = new String(b, 0, Math.min(b.length, 512), StandardCharsets.UTF_8).trim();
     if (headText.startsWith("{") || headText.startsWith("[")) return "JSON";
@@ -464,6 +485,41 @@ public class DatasetIntakeService {
     return "UNKNOWN";
   }
 
+  private static boolean looksLikeText(byte[] bytes) {
+    int limit = Math.min(bytes.length, 2048);
+    if (limit == 0) {
+      return false;
+    }
+    int suspicious = 0;
+    for (int i = 0; i < limit; i += 1) {
+      int value = bytes[i] & 0xFF;
+      if (value == 0) {
+        return false;
+      }
+      if (value < 0x09 || (value > 0x0D && value < 0x20)) {
+        suspicious += 1;
+      }
+    }
+    return suspicious <= Math.max(4, limit / 100);
+  }
+
+  private static boolean isPlausibleCsvHeader(String header) {
+    if (header == null || header.isBlank() || header.length() > 4000) {
+      return false;
+    }
+    boolean hasDelimiter = header.contains(",") || header.contains("\t") || header.contains(";");
+    if (!hasDelimiter) {
+      return false;
+    }
+    for (int i = 0; i < header.length(); i += 1) {
+      char ch = header.charAt(i);
+      if (ch == '\uFFFD' || (Character.isISOControl(ch) && ch != '\t')) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   private void parseSample(Map<String, Object> profile, String format, DownloadSample sample) {
     try {
       switch (format) {
@@ -474,9 +530,10 @@ public class DatasetIntakeService {
         case "POSCAR" -> parsePoscar(profile, sample);
         case "HDF5" -> parseHdf5(profile, sample);
         case "ZIP" -> parseZip(profile, sample);
+        case "GZIP", "XZ", "BZIP2", "ZSTD", "TAR", "BINARY" -> parseCompressedOrBinary(profile, format, sample);
         default -> {
           profile.put("status", "unsupported");
-          profile.put("summary", "暂不支持自动解析该格式，需人工配置适配器");
+          profile.put("summary", "暂不支持自动解析该格式，需人工配置适配器。");
           profile.put("detectedFields", "metadata only");
         }
       }
@@ -522,6 +579,13 @@ public class DatasetIntakeService {
       if (!line.isBlank()) dataLines++;
     }
     String header = lines.length > 0 ? lines[0] : "";
+    if (!isPlausibleCsvHeader(header)) {
+      profile.put("status", "unsupported");
+      profile.put("fields", List.of());
+      profile.put("summary", "样本不像有效 CSV 文本，可能是压缩包或二进制文件；已停止按 CSV 解析，避免乱码字段。");
+      profile.put("detectedFields", "metadata only");
+      return;
+    }
     String delimiter = header.contains("\t") ? "\t" : (header.contains(";") ? ";" : ",");
     List<String> columns = new ArrayList<>();
     for (String col : header.split(java.util.regex.Pattern.quote(delimiter))) {
@@ -534,6 +598,17 @@ public class DatasetIntakeService {
     profile.put("recordEstimate", sample.truncated() ? "≥ " + rows + "（样本截断）" : String.valueOf(rows));
     profile.put("summary", "CSV 列 " + columns.size() + " 个，数据行约 " + rows);
     profile.put("detectedFields", mapToScientificFields(String.join(" ", columns)));
+  }
+
+  private void parseCompressedOrBinary(Map<String, Object> profile, String format, DownloadSample sample) {
+    profile.put("status", "unsupported");
+    profile.put("fields", List.of());
+    profile.put("detectedFields", "metadata only");
+    if ("BINARY".equals(format)) {
+      profile.put("summary", "检测到二进制样本，当前不会按 CSV/文本解析。请确认原始格式，或先解包后按内部文件接入。");
+      return;
+    }
+    profile.put("summary", format + " 压缩/归档文件已识别。当前预检只完成外层格式判断，需先解压，再按内部 CIF/XYZ/HDF5/JSON/CSV 文件解析。");
   }
 
   private void parseXyz(Map<String, Object> profile, DownloadSample sample) {
@@ -762,7 +837,7 @@ public class DatasetIntakeService {
       note = "已按字段名建议映射，可编辑后确认入库；将写入展示库数据集 " + datasetKey + "（前若干条，需人工确认）。";
     } else {
       note = "当前解析格式为 " + (format.isBlank() ? "未知" : format)
-          + "，支持 CSV/JSON 表格与 XYZ/EXTXYZ/CIF/POSCAR 结构来源直接入库；其它格式需人工适配器。";
+          + "，支持 CSV/JSON 表格与 XYZ/EXTXYZ/CIF/POSCAR/HDF5 结构来源直接入库；其它格式需人工适配器。";
     }
     return new IngestSuggestionResponse(datasetKey, datasetName, supported, format, fields, suggested, note);
   }
@@ -798,7 +873,7 @@ public class DatasetIntakeService {
         modeNote = "表格来源（" + format + "）按确认的字段映射";
       } else {
         throw new ApiException(HttpStatus.BAD_REQUEST,
-            "仅支持 CSV/JSON 表格或 XYZ/EXTXYZ/CIF/POSCAR 结构来源入库，当前为 " + format);
+            "仅支持 CSV/JSON 表格或 XYZ/EXTXYZ/CIF/POSCAR/HDF5 结构来源入库，当前为 " + format);
       }
     } catch (ApiException ex) {
       throw ex;
